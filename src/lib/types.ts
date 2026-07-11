@@ -1,32 +1,41 @@
 // =============================================================================
 // Director's Chair — Shared TypeScript Types
 // =============================================================================
-// These types mirror the Supabase DB schema (supabase/schema.sql).
-// Used across API routes, client components, and React Query hooks.
-// =============================================================================
-
-// ─── Enums ───────────────────────────────────────────────────────────────────
 
 export type AssetType = 'image' | 'video' | 'audio';
 export type AssetSource = 'nb2' | 'upload';
 export type ShotStatus = 'pending' | 'generating' | 'done' | 'error';
 
-// ─── Asset ───────────────────────────────────────────────────────────────────
-
 export interface Asset {
   id: string;
   project_id: string;
   type: AssetType;
-  tag: string;              // without the leading '@'
+  tag: string;
   url: string;
   prompt: string | null;
   source: AssetSource;
   created_at: string;
 }
 
-// ─── Context Summary (G2 — What We Sent) ────────────────────────────────────
-// Persisted as JSONB on each shot so the Context Inspector can show
-// exactly what context was passed to the AI model.
+export interface ResolvedShotRef {
+  shotId: string;
+  label: string;
+  turnIndex: number;
+  videoUrl: string;
+}
+
+export interface TextReference {
+  label: string;
+  description: string;
+}
+
+export interface MultimodalInputRef {
+  type: 'image' | 'audio' | 'text_reference';
+  url?: string;
+  mimeType?: string;
+  label?: string;
+  description?: string;
+}
 
 export interface ContextSummary {
   references: {
@@ -35,14 +44,23 @@ export interface ContextSummary {
     url: string;
     type: AssetType;
   }[];
-  consistencyInstruction: string | null; // present when prior shots exist
-  physicsInstruction: string;            // ALWAYS present (G1)
-  baseVideoUrl: string | null;           // present for edits
+  consistencyInstruction: string | null;
+  physicsInstruction: string;
+  baseVideoUrl: string | null;
   parentShotId: string | null;
-  interactionId?: string | null;         // present for stateful edits (Gemini interactions API)
+  interactionId?: string | null;
+  editMode?: boolean;
+  userPrompt?: string;
+  instructions?: string[];
+  referencedShots?: ResolvedShotRef[];
+  textReferences?: TextReference[];
+  previousInteractionId?: string | null;
+  omniEndpoint?: 'interactions.create' | 'interactions.edit';
+  multimodalInputs?: MultimodalInputRef[];
+  swapInstruction?: string | null;
+  originalSize?: number | null;
+  compressedSize?: number | null;
 }
-
-// ─── Shot ────────────────────────────────────────────────────────────────────
 
 export interface Shot {
   id: string;
@@ -57,8 +75,6 @@ export interface Shot {
   error: string | null;
   created_at: string;
 }
-
-// ─── Project Bundle (returned by GET /api/projects/[id]) ────────────────────
 
 export interface Project {
   id: string;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase';
+import { uploadImageToStorage, uploadVideoToStorage } from '@/lib/storage-upload';
 
 export async function POST(request: Request) {
   try {
@@ -69,27 +70,27 @@ export async function POST(request: Request) {
     // 3. Upload file to Supabase Storage
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const fileId = crypto.randomUUID();
-    const ext = file.name.split('.').pop() || 'bin';
-    const filePath = `uploads/${projectId}/${fileId}.${ext}`;
+    const storage = getServerSupabase();
 
-    const { error: uploadError } = await supabase.storage
-      .from('assets')
-      .upload(filePath, buffer, {
+    let publicUrl = '';
+    if (type === 'video') {
+      const uploaded = await uploadVideoToStorage(storage, projectId, buffer, file.type);
+      publicUrl = uploaded.publicUrl;
+    } else if (type === 'image') {
+      const uploaded = await uploadImageToStorage(storage, projectId, buffer, file.type);
+      publicUrl = uploaded.publicUrl;
+    } else {
+      const fileId = crypto.randomUUID();
+      const ext = file.name.split('.').pop() || 'bin';
+      const filePath = `uploads/${projectId}/${fileId}.${ext}`;
+      const { error: uploadError } = await storage.storage.from('assets').upload(filePath, buffer, {
         contentType: file.type,
         duplex: 'half',
       } as any);
-
-    if (uploadError) {
-      console.error('Upload to storage failed:', uploadError);
-      throw new Error(`Storage upload failed: ${uploadError.message}`);
+      if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+      publicUrl = storage.storage.from('assets').getPublicUrl(filePath).data.publicUrl;
     }
 
-    const { data: { publicUrl } } = supabase.storage
-      .from('assets')
-      .getPublicUrl(filePath);
-
-    // 4. Insert database record
     const { data: newAsset, error: insertError } = await supabase
       .from('assets')
       .insert({

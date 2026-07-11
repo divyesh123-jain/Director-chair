@@ -20,12 +20,16 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
   const [initError, setInitError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
 
-  const refreshProjectData = useCallback(async (projId: string) => {
+  const refreshProjectData = useCallback(async (projId: string, options?: { silent?: boolean }) => {
     try {
       const res = await fetch(`/api/projects/${projId}`);
       if (!res.ok) {
         if (res.status === 404 || res.status === 403) {
           window.location.href = '/';
+          return;
+        }
+        if (options?.silent) {
+          console.warn('Background refresh failed:', res.status);
           return;
         }
         throw new Error('Failed to load project details');
@@ -34,17 +38,53 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
       setProject(json.data.project);
       setAssets(json.data.assets || []);
       setShots(json.data.shots || []);
+      setInitError(null);
     } catch (err: any) {
       console.error(err);
-      setInitError(err.message || 'Failed to load project');
+      if (!options?.silent) {
+        setInitError(err.message || 'Failed to load project');
+      }
     } finally {
-      setInitializing(false);
+      if (!options?.silent) {
+        setInitializing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     refreshProjectData(id);
   }, [id, refreshProjectData]);
+
+  useEffect(() => {
+    const hasGenerating = shots.some(s => s.status === 'generating' || s.status === 'pending');
+    if (!hasGenerating || !project) return;
+
+    const interval = setInterval(() => {
+      refreshProjectData(project.id, { silent: true });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [shots, project, refreshProjectData]);
+
+  const handleRegenerate = async (shotId: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/shots/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id, shotId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Regeneration failed');
+      setShots(prev => [...prev, json.data]);
+      await refreshProjectData(project.id);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAssetCreated = (newAsset: Asset) => {
     setAssets(prev => [...prev, newAsset]);
@@ -222,9 +262,11 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
         />
         <TimelinePanel
           shots={shots}
+          projectId={project.id}
           onSelectForEdit={setEditingShot}
           onDeleteShot={handleDeleteShot}
           onReusePrompt={(p) => setMessage(p)}
+          onRegenerate={handleRegenerate}
           isEditingActive={!!editingShot}
         />
       </main>

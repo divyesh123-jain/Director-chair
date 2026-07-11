@@ -14,11 +14,14 @@ export interface GenerateImageResult {
 
 export interface GenerateVideoArgs {
   prompt: string;
-  instructions: string[];           // physics/consistency/edit prompts
-  referenceImages: string[];        // asset URLs (@tags)
-  referenceVideos: string[];        // prior-shot video URLs
-  baseVideo: string | null;         // parent shot video URL (if edit)
-  previousInteractionId?: string | null; // Gemini interaction ID for stateful editing
+  instructions: string[];
+  referenceImages: string[];
+  referenceVideos: string[];
+  referenceAudios?: string[];
+  baseVideo: string | null;
+  previousInteractionId?: string | null;
+  /** When true, may use previous_interaction_id (edits only). New shots must be false. */
+  isEdit?: boolean;
 }
 
 export interface GenerateVideoResult {

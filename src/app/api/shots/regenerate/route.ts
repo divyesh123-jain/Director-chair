@@ -1,28 +1,26 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase';
 import { getProvider } from '@/lib/ai/provider';
-import { resolveTags, resolveShotTags } from '@/lib/tags';
 import { buildVideoContext, splitAssetMedia } from '@/lib/prompt';
 import { uploadVideoToStorage } from '@/lib/storage-upload';
 import { z } from 'zod';
 
-const generateShotSchema = z.object({
+const regenerateSchema = z.object({
   projectId: z.string().uuid(),
-  message: z.string().min(1),
+  shotId: z.string().uuid(),
 });
 
 export async function POST(request: Request) {
-  let createdShotId: string | null = null;
   let supabase: any = null;
   try {
     const body = await request.json().catch(() => ({}));
-    const parsed = generateShotSchema.safeParse(body);
+    const parsed = regenerateSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.message }, { status: 400 });
     }
 
-    const { projectId, message } = parsed.data;
+    const { projectId, shotId } = parsed.data;
 
     const { getServerSupabaseClient } = await import('@/lib/supabase');
     supabase = await getServerSupabaseClient();
@@ -43,51 +41,65 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const storage = getServerSupabase();
-
-    const { data: assets, error: assetsError } = await supabase
-      .from('assets')
-      .select('*')
-      .eq('project_id', projectId);
-
-    if (assetsError) throw assetsError;
-
-    const { data: shots, error: shotsError } = await supabase
+    const { data: sourceShot, error: shotError } = await supabase
       .from('shots')
       .select('*')
-      .eq('project_id', projectId);
+      .eq('id', shotId)
+      .single();
 
-    if (shotsError) throw shotsError;
+    if (shotError || !sourceShot) {
+      return NextResponse.json({ error: 'Shot not found' }, { status: 404 });
+    }
 
-    const { resolved: referencedAssets } = resolveTags(message, assets || []);
-    const { resolved: referencedShots } = resolveShotTags(message, shots || []);
+    const storage = getServerSupabase();
 
-    const topLevelShots = (shots || []).filter(
-      (s: any) => s.parent_shot_id === null && s.status === 'done'
+    const { data: assets } = await supabase.from('assets').select('*').eq('project_id', projectId);
+    const referencedAssets = (assets || []).filter((a: any) =>
+      sourceShot.referenced_asset_ids.includes(a.id)
     );
-    const priorShot = topLevelShots.length > 0 ? topLevelShots[topLevelShots.length - 1] : null;
-    const priorInteractionId = priorShot?.context_summary?.interactionId || null;
 
+    const isEdit = !!sourceShot.parent_shot_id;
+    let priorShot = null;
+    let parentShot = null;
+
+    if (isEdit && sourceShot.parent_shot_id) {
+      const { data } = await supabase
+        .from('shots')
+        .select('*')
+        .eq('id', sourceShot.parent_shot_id)
+        .single();
+      parentShot = data;
+      priorShot = data;
+    } else if (sourceShot.turn_index > 0) {
+      const { data: shots } = await supabase
+        .from('shots')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('turn_index', sourceShot.turn_index - 1)
+        .is('parent_shot_id', null)
+        .eq('status', 'done');
+      priorShot = shots?.[shots.length - 1] || null;
+    }
+
+    const ctx = sourceShot.context_summary;
     const { instructions, contextSummary } = buildVideoContext({
-      prompt: message,
+      prompt: sourceShot.prompt,
       referencedAssets,
-      referencedShots,
-      priorShot,
-      baseVideoUrl: null,
-      isEdit: false,
-      previousInteractionId: priorInteractionId,
+      referencedShots: ctx?.referencedShots || [],
+      priorShot: isEdit ? parentShot : priorShot,
+      baseVideoUrl: isEdit ? parentShot?.output_video_url || null : null,
+      isEdit,
+      previousInteractionId: ctx?.previousInteractionId || null,
     });
 
-    const turnIndex = (shots || []).filter((s: any) => s.parent_shot_id === null).length;
-
-    const { data: shot, error: insertError } = await supabase
+    const { data: newShot, error: insertError } = await supabase
       .from('shots')
       .insert({
         project_id: projectId,
-        turn_index: turnIndex,
-        prompt: message,
-        referenced_asset_ids: referencedAssets.map(a => a.id),
-        parent_shot_id: null,
+        turn_index: sourceShot.turn_index,
+        prompt: sourceShot.prompt,
+        referenced_asset_ids: sourceShot.referenced_asset_ids,
+        parent_shot_id: sourceShot.parent_shot_id,
         status: 'generating',
         context_summary: contextSummary,
       })
@@ -95,57 +107,39 @@ export async function POST(request: Request) {
       .single();
 
     if (insertError) throw insertError;
-    createdShotId = shot.id;
 
     const media = splitAssetMedia(referencedAssets);
-
     const provider = getProvider();
+
     const result = await provider.generateVideo({
-      prompt: message,
+      prompt: sourceShot.prompt,
       instructions,
       referenceImages: media.images,
       referenceVideos: [],
       referenceAudios: [],
       baseVideo: null,
-      previousInteractionId: null,
-      isEdit: false,
+      previousInteractionId: isEdit ? ctx?.previousInteractionId || null : null,
+      isEdit,
     });
 
     let finalUrl = '';
     let originalSize: number | null = null;
     let compressedSize: number | null = null;
 
-    if (result.url && !result.bytes) {
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const localPath = path.join(process.cwd(), 'public', result.url);
-
-        if (fs.existsSync(localPath)) {
-          const fileBytes = fs.readFileSync(localPath);
-          const uploaded = await uploadVideoToStorage(storage, projectId, fileBytes);
-          finalUrl = uploaded.publicUrl;
-          originalSize = uploaded.originalSize;
-          compressedSize = uploaded.compressedSize;
-        } else {
-          finalUrl = result.url;
-        }
-      } catch (err) {
-        console.error('Failed to read mock file for upload:', err);
-        finalUrl = result.url || '';
-      }
-    } else if (result.bytes) {
+    if (result.bytes) {
       const uploaded = await uploadVideoToStorage(storage, projectId, result.bytes, result.contentType);
       finalUrl = uploaded.publicUrl;
       originalSize = uploaded.originalSize;
       compressedSize = uploaded.compressedSize;
+    } else if (result.url) {
+      finalUrl = result.url;
     } else {
       throw new Error('AI provider returned empty response.');
     }
 
     const updatedSummary = {
       ...contextSummary,
-      interactionId: result.interactionId || null,
+      interactionId: result.interactionId || ctx?.previousInteractionId || null,
       originalSize,
       compressedSize,
     };
@@ -157,7 +151,7 @@ export async function POST(request: Request) {
         output_video_url: finalUrl,
         context_summary: updatedSummary,
       })
-      .eq('id', shot.id)
+      .eq('id', newShot.id)
       .select('*')
       .single();
 
@@ -165,18 +159,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data: completedShot });
   } catch (error: any) {
-    console.error('POST /api/shots/generate error:', error);
-
-    if (createdShotId && supabase) {
-      await supabase
-        .from('shots')
-        .update({
-          status: 'error',
-          error: error.message || 'Generation failed',
-        })
-        .eq('id', createdShotId);
-    }
-
+    console.error('POST /api/shots/regenerate error:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }

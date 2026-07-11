@@ -10,6 +10,16 @@ export async function GET(
     const supabase = await getServerSupabaseClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
+    if (authError) {
+      const isNetwork =
+        authError.message?.includes('fetch failed') ||
+        authError.message?.includes('timeout') ||
+        authError.message?.includes('Connect Timeout');
+      if (isNetwork) {
+        return NextResponse.json({ error: 'Supabase temporarily unreachable' }, { status: 503 });
+      }
+    }
+
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
