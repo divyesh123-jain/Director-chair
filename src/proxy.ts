@@ -22,6 +22,7 @@ export default async function proxy(request: NextRequest) {
   // Protected paths
   const isProtectedRoute =
     url.pathname === '/' ||
+    url.pathname.startsWith('/project') ||
     (url.pathname.startsWith('/api') && !url.pathname.startsWith('/api/auth/callback'));
 
   // Redirect unauthenticated users away from protected routes
