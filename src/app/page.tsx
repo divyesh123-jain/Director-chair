@@ -14,6 +14,7 @@ export default function Page() {
   const [editingShot, setEditingShot] = useState<Shot | null>(null);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
 
   // 1. Fetch project bundle
@@ -55,8 +56,9 @@ export default function Page() {
 
         setProject(activeProject);
         await refreshProjectData(activeProject.id);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Initialization error:', err);
+        setInitError(err.message || 'Failed to initialize workspace');
       } finally {
         setInitializing(false);
       }
@@ -153,6 +155,38 @@ export default function Page() {
       }
     }
   };
+
+  if (initError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-400 p-6">
+        <div className="max-w-md w-full bg-zinc-900/40 border border-zinc-800 p-8 rounded-3xl text-center space-y-6 backdrop-blur-md">
+          <div className="w-16 h-16 bg-rose-950/30 text-rose-400 border border-rose-900/40 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-lg shadow-rose-950/20">
+            ⚠️
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-bold text-white">Database Migration Required</h2>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              The workspace failed to load because the database is missing the <code>user_id</code> column on the <code>projects</code> table.
+            </p>
+          </div>
+          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl text-[10px] text-left font-mono text-indigo-300 w-full overflow-x-auto select-all cursor-pointer" title="Click to select all">
+{`alter table projects 
+add column if not exists user_id uuid 
+references auth.users(id) on delete cascade;`}
+          </div>
+          <p className="text-[10px] text-zinc-500">
+            Run the SQL query above in your <b>Supabase Dashboard &gt; SQL Editor</b>, then click refresh.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl transition-all duration-200 shadow-lg shadow-indigo-600/20"
+          >
+            Refresh Workspace 🔄
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (initializing) {
     return (
