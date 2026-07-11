@@ -38,7 +38,8 @@ export async function POST(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      console.error('Project Creation Auth Failed:', { authError, user });
+      return NextResponse.json({ error: 'Unauthorized: ' + (authError?.message || 'No user') }, { status: 401 });
     }
 
     const body = await request.json().catch(() => ({}));
