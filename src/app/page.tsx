@@ -1,64 +1,225 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React, { useState, useEffect, useCallback } from 'react';
+import AssetPanel from '@/components/AssetPanel';
+import ConversationPanel from '@/components/ConversationPanel';
+import TimelinePanel from '@/components/TimelinePanel';
+import type { Asset, Shot, Project } from '@/lib/types';
+
+export default function Page() {
+  const [project, setProject] = useState<Project | null>(null);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [shots, setShots] = useState<Shot[]>([]);
+  const [editingShot, setEditingShot] = useState<Shot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [message, setMessage] = useState('');
+
+  // 1. Fetch project bundle
+  const refreshProjectData = useCallback(async (projId: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projId}`);
+      if (!res.ok) throw new Error('Failed to load project details');
+      const json = await res.json();
+      setAssets(json.data.assets || []);
+      setShots(json.data.shots || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  // 2. Initialize project on load
+  useEffect(() => {
+    async function init() {
+      try {
+        // Fetch all projects
+        const res = await fetch('/api/projects');
+        if (!res.ok) throw new Error('Failed to load projects');
+        const json = await res.json();
+        const existing = json.data || [];
+
+        let activeProject = existing[0];
+
+        // If no project exists, auto-create a demo project
+        if (!activeProject) {
+          const createRes = await fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: "Director's Chair Demo" }),
+          });
+          const createJson = await createRes.json();
+          if (!createRes.ok) throw new Error(createJson.error || 'Failed to auto-create project');
+          activeProject = createJson.data;
+        }
+
+        setProject(activeProject);
+        await refreshProjectData(activeProject.id);
+      } catch (err) {
+        console.error('Initialization error:', err);
+      } finally {
+        setInitializing(false);
+      }
+    }
+    init();
+  }, [refreshProjectData]);
+
+  // Handle new asset generation/upload locally
+  const handleAssetCreated = (newAsset: Asset) => {
+    setAssets(prev => [...prev, newAsset]);
+  };
+
+  const handleAssetDeleted = (deletedId: string) => {
+    setAssets(prev => prev.filter(a => a.id !== deletedId));
+  };
+
+  const handleDeleteShot = async (shotId: string) => {
+    if (!confirm('Are you sure you want to delete this shot version? Any child edits built on this version will also be deleted.')) return;
+    try {
+      const res = await fetch(`/api/shots/${shotId}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to delete shot');
+      }
+      if (project) {
+        await refreshProjectData(project.id);
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  // Handle conversational action from the chat input
+  const handleSendPrompt = async (message: string, isEdit: boolean, parentShotId?: string) => {
+    if (!project) return;
+    setLoading(true);
+
+    const apiPath = isEdit ? '/api/shots/edit' : '/api/shots/generate';
+    const body = isEdit
+      ? { projectId: project.id, parentShotId, message }
+      : { projectId: project.id, message };
+
+    // Optimistically insert a generating shot so the UI shows active generation
+    const tempId = crypto.randomUUID();
+    const tempShot: Shot = {
+      id: tempId,
+      project_id: project.id,
+      turn_index: isEdit
+        ? (shots.find(s => s.id === parentShotId)?.turn_index ?? shots.length)
+        : shots.filter(s => s.parent_shot_id === null).length,
+      prompt: message,
+      referenced_asset_ids: [],
+      parent_shot_id: parentShotId || null,
+      output_video_url: null,
+      context_summary: null,
+      status: 'generating',
+      error: null,
+      created_at: new Date().toISOString(),
+    };
+
+    setShots(prev => [...prev, tempShot]);
+    setEditingShot(null); // clear editing state once submitted
+
+    try {
+      const res = await fetch(apiPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to process video command');
+      }
+
+      // Replace optimistic placeholder with real completed shot
+      setShots(prev => prev.map(s => (s.id === tempId ? json.data : s)));
+    } catch (err: any) {
+      console.error(err);
+      setShots(prev =>
+        prev.map(s =>
+          s.id === tempId
+            ? { ...s, status: 'error', error: err.message || 'Generation aborted' }
+            : s
+        )
+      );
+    } finally {
+      setLoading(false);
+      if (project) {
+        // Full sync with DB state
+        await refreshProjectData(project.id);
+      }
+    }
+  };
+
+  if (initializing) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-400 gap-4">
+        <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
+        <p className="text-sm font-medium tracking-wide uppercase font-mono animate-pulse">Initializing Studio Workspace...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex-1 flex flex-col h-screen overflow-hidden bg-zinc-950 font-sans">
+      {/* Global Top Banner */}
+      <header className="h-[56px] border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-md flex items-center justify-between px-6 z-10">
+        <div className="flex items-center gap-3">
+          <div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
+            D
+          </div>
+          <div>
+            <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
+              Director's Chair
+            </h1>
+          </div>
+        </div>
+
+        {/* Project Name Indicator & Status */}
+        <div className="flex items-center gap-4 text-xs font-medium text-zinc-400">
+          <div className="flex items-center gap-2 px-3 py-1 bg-zinc-800 rounded-full border border-zinc-700/50">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>Project: {project?.name}</span>
+          </div>
+          <div className="text-[10px] text-zinc-500 font-mono">
+            Provider: <span className="text-indigo-400 font-semibold uppercase">{process.env.NEXT_PUBLIC_AI_PROVIDER || 'mock'}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Three Panel Studio Workspace */}
+      <main className="flex-1 flex overflow-hidden">
+        {/* Left: Asset Panel */}
+        <AssetPanel
+          projectId={project?.id || ''}
+          assets={assets}
+          onAssetCreated={handleAssetCreated}
+          onAssetDeleted={handleAssetDeleted}
+          onReusePrompt={(p) => setMessage(p)}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        {/* Center: Conversation Log */}
+        <ConversationPanel
+          assets={assets}
+          shots={shots}
+          editingShot={editingShot}
+          onCancelEdit={() => setEditingShot(null)}
+          onSend={handleSendPrompt}
+          loading={loading}
+          message={message}
+          setMessage={setMessage}
+        />
+
+        {/* Right: Timeline Panel */}
+        <TimelinePanel
+          shots={shots}
+          onSelectForEdit={setEditingShot}
+          onDeleteShot={handleDeleteShot}
+          onReusePrompt={(p) => setMessage(p)}
+          isEditingActive={!!editingShot}
+        />
       </main>
     </div>
   );
