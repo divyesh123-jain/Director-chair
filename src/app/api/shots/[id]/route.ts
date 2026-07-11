@@ -7,17 +7,28 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const supabase = getServerSupabase();
+    const { getServerSupabaseClient } = await import('@/lib/supabase');
+    const supabase = await getServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // 1. Fetch target shot
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // 1. Fetch target shot and parent project user_id
     const { data: shot, error: fetchError } = await supabase
       .from('shots')
-      .select('*')
+      .select('*, projects(user_id)')
       .eq('id', id)
       .single();
 
     if (fetchError || !shot) {
       return NextResponse.json({ error: 'Shot not found' }, { status: 404 });
+    }
+
+    const projectUser = (shot as any).projects?.user_id;
+    if (projectUser !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // 2. Fetch all shots in the project to resolve descendant edits

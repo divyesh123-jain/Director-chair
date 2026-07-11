@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase';
+import { getServerSupabaseClient } from '@/lib/supabase';
 
 export async function GET(
   request: Request,
@@ -7,7 +7,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     // 1. Fetch project info
     const { data: project, error: projectError } = await supabase
@@ -18,6 +23,11 @@ export async function GET(
 
     if (projectError) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    // Verify ownership
+    if (project.user_id !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // 2. Fetch assets ordered by created_at ascending

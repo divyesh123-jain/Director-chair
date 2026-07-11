@@ -7,17 +7,28 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const supabase = getServerSupabase();
+    const { getServerSupabaseClient } = await import('@/lib/supabase');
+    const supabase = await getServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // 1. Fetch asset first to check existence and source
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // 1. Fetch asset and parent project user_id
     const { data: asset, error: fetchError } = await supabase
       .from('assets')
-      .select('*')
+      .select('*, projects(user_id)')
       .eq('id', id)
       .single();
 
     if (fetchError || !asset) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+    }
+
+    const projectUser = (asset as any).projects?.user_id;
+    if (projectUser !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // 2. If it's stored in Supabase Storage, delete the file from the storage bucket

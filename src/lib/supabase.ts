@@ -67,17 +67,10 @@ export function getBrowserSupabase() {
   return _browserClient;
 }
 
-// ─── Server Component Client (RSC / Server Actions) ─────────────────────────
-
 /**
- * Creates a Supabase client for use in React Server Components.
- * Unlike the server client above, this uses the anon key and respects
- * cookie-based auth (if we ever add it). For now, functionally similar
- * to the browser client but safe to use in server components.
- *
- * NOT a singleton — create per-request in server components.
+ * Creates a cookie-aware Supabase client for Server Components, Route Handlers, and Server Actions.
  */
-export function createServerComponentClient() {
+export async function getServerSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -87,11 +80,24 @@ export function createServerComponentClient() {
     );
   }
 
+  const { cookies } = await import('next/headers');
+  const cookieStore = await cookies();
+
   return createServerClient(url, anonKey, {
     cookies: {
-      // Hackathon build: no auth cookies, so we stub these out.
-      getAll: () => [],
-      setAll: () => {},
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          );
+        } catch {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored if you have middleware refreshing user sessions.
+        }
+      },
     },
   });
 }
