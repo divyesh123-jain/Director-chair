@@ -46,6 +46,37 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
     refreshProjectData(id);
   }, [id, refreshProjectData]);
 
+  useEffect(() => {
+    const hasGenerating = shots.some(s => s.status === 'generating' || s.status === 'pending');
+    if (!hasGenerating || !project) return;
+
+    const interval = setInterval(() => {
+      refreshProjectData(project.id);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [shots, project, refreshProjectData]);
+
+  const handleRegenerate = async (shotId: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/shots/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id, shotId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Regeneration failed');
+      setShots(prev => [...prev, json.data]);
+      await refreshProjectData(project.id);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAssetCreated = (newAsset: Asset) => {
     setAssets(prev => [...prev, newAsset]);
   };
@@ -222,9 +253,11 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
         />
         <TimelinePanel
           shots={shots}
+          projectId={project.id}
           onSelectForEdit={setEditingShot}
           onDeleteShot={handleDeleteShot}
           onReusePrompt={(p) => setMessage(p)}
+          onRegenerate={handleRegenerate}
           isEditingActive={!!editingShot}
         />
       </main>

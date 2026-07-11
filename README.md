@@ -48,6 +48,12 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+### 6. Generate Demo Placeholders (mock mode)
+```bash
+node scripts/generate-demo-assets.mjs
+```
+Creates `/public/demo/images` and `/public/demo/videos` for offline `AI_PROVIDER=mock` runs.
+
 ---
 
 ## Demo Script (Graded Performance)
@@ -58,5 +64,6 @@ Frame the pain first, then close all three gaps:
 2. **Assets:** Generate `@hero` (NB2 Lite), upload `@spaceship`. → *"Some AI-generated, some ours."*
 3. **Shot 1:** `@hero stands on the bridge of the @spaceship, cinematic wide shot.` → open **Context Inspector**: *"Physics ON — watch the shadows."* (G1)
 4. **Shot 2 (consistency):** `Now a close-up of @hero, running, from behind, at night.` → Context Inspector shows *"Consistency: references Shot 1."* → *"Different angle and lighting, same character — that's our orchestration, not luck."* (G2)
-5. **Edit (anti-reroll):** Edit Shot 1 → `Make it red alert lighting.` → version `v2` appears; everything else preserved. (anti-reroll + G1 lighting)
-6. **Close (narrative):** Click **▶ Play Timeline** → all shots play as one sequence. *"One conversation. A consistent, physically coherent, multi-shot scene — never started from scratch."* (G3)
+5. **Edit (anti-reroll):** Edit Shot 1 → `Make it red alert lighting.` → version `v2` appears; everything else preserved. Open **What we sent** to show Omni edit payload: base video, instructions, interaction chain. (anti-reroll + G1 lighting)
+5b. **Element swap:** Edit Shot 1 → `Swap @hero with @villain, match lighting from @shot-2` → Context Inspector shows asset refs, `@shot-2` reference, and Element Swap instruction.
+6. **Close (narrative):** Click **▶ Play Timeline** → all shots play as one sequence. Use **Export** to download the combined MP4. *"One conversation. A consistent, physically coherent, multi-shot scene — never started from scratch."* (G3)

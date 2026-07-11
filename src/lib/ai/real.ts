@@ -1,14 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import type { AIProvider, GenerateImageArgs, GenerateImageResult, GenerateVideoArgs, GenerateVideoResult } from './provider';
 
-// =============================================================================
-// Director's Chair — Real Gemini AI Provider
-// =============================================================================
-// Connects to the Gemini API using the official @google/genai SDK.
-// Leverages NB2 Lite (image gen) and Gemini Omni Flash (video gen/edit)
-// via the new Interactions API.
-// =============================================================================
-
 export class RealProvider implements AIProvider {
   private getClient(): GoogleGenAI {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -48,7 +40,6 @@ export class RealProvider implements AIProvider {
     const model = process.env.OMNI_MODEL_ID || 'gemini-omni-flash-preview';
 
     try {
-      // ─── Turn 2+: Stateful Edit via previous_interaction_id ─────────────────
       if (args.previousInteractionId) {
         const fullPrompt = [args.prompt, ...args.instructions].join('\n');
 
@@ -56,7 +47,7 @@ export class RealProvider implements AIProvider {
           model,
           previous_interaction_id: args.previousInteractionId,
           input: fullPrompt,
-        } as any); // cast as any in case TS definitions are lagging behind preview SDK features
+        } as any);
 
         const outputVideo = response.output_video;
         if (!outputVideo || !outputVideo.data) {
@@ -70,23 +61,28 @@ export class RealProvider implements AIProvider {
         };
       }
 
-      // ─── Turn 1: Initial Generation or reference video/image input ──────────
       const inputParts: any[] = [];
 
-      // Download and attach reference images as base64
+      if (args.baseVideo) {
+        const base64Data = await downloadAsBase64(args.baseVideo);
+        inputParts.push({
+          type: 'video',
+          data: base64Data,
+          mime_type: 'video/mp4',
+        });
+      }
+
       for (const imgUrl of args.referenceImages) {
         const base64Data = await downloadAsBase64(imgUrl);
         inputParts.push({
           type: 'image',
           data: base64Data,
-          mime_type: 'image/png',
+          mime_type: guessImageMime(imgUrl),
         });
       }
 
-      // Download and attach reference videos as documents
       for (const videoUrl of args.referenceVideos) {
-        // Soft references can also be uploaded to Gemini Files API or passed as base64 if small.
-        // For simplicity in hackathon, we download and embed them as base64 videos or rely on text prompting.
+        if (videoUrl === args.baseVideo) continue;
         try {
           const base64Data = await downloadAsBase64(videoUrl);
           inputParts.push({
@@ -95,16 +91,25 @@ export class RealProvider implements AIProvider {
             mime_type: 'video/mp4',
           });
         } catch (e) {
-          console.warn('Skipped passing soft-reference video:', videoUrl, e);
+          console.warn('Skipped passing reference video:', videoUrl, e);
         }
       }
 
-      // Append text instruction
+      for (const audioUrl of args.referenceAudios || []) {
+        try {
+          const base64Data = await downloadAsBase64(audioUrl);
+          inputParts.push({
+            type: 'audio',
+            data: base64Data,
+            mime_type: guessAudioMime(audioUrl),
+          });
+        } catch (e) {
+          console.warn('Skipped passing reference audio:', audioUrl, e);
+        }
+      }
+
       const textPrompt = [args.prompt, ...args.instructions].join('\n');
-      inputParts.push({
-        type: 'text',
-        text: textPrompt,
-      });
+      inputParts.push({ type: 'text', text: textPrompt });
 
       const response = await ai.interactions.create({
         model,
@@ -128,14 +133,22 @@ export class RealProvider implements AIProvider {
   }
 }
 
-/**
- * Downloads a URL and converts it to a base64 encoded string.
- */
+function guessImageMime(url: string): string {
+  if (url.match(/\.jpe?g($|\?)/i)) return 'image/jpeg';
+  if (url.match(/\.webp($|\?)/i)) return 'image/webp';
+  if (url.match(/\.gif($|\?)/i)) return 'image/gif';
+  return 'image/png';
+}
+
+function guessAudioMime(url: string): string {
+  if (url.match(/\.wav($|\?)/i)) return 'audio/wav';
+  if (url.match(/\.ogg($|\?)/i)) return 'audio/ogg';
+  return 'audio/mpeg';
+}
+
 async function downloadAsBase64(url: string): Promise<string> {
-  // If url is relative (e.g. from local /demo), resolve it locally or fetch it
   let fetchUrl = url;
   if (url.startsWith('/')) {
-    // Fallback logic for mock url resolution
     const port = process.env.PORT || 3000;
     fetchUrl = `http://localhost:${port}${url}`;
   }

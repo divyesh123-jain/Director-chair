@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase';
 import { getProvider } from '@/lib/ai/provider';
-import { resolveTags } from '@/lib/tags';
-import { buildVideoContext } from '@/lib/prompt';
+import { resolveTags, resolveShotTags } from '@/lib/tags';
+import { buildVideoContext, splitAssetMedia } from '@/lib/prompt';
+import { uploadVideoToStorage } from '@/lib/storage-upload';
 import { z } from 'zod';
 
 const editShotSchema = z.object({
@@ -32,7 +33,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Verify project ownership
     const { data: projectCheck } = await supabase
       .from('projects')
       .select('id')
@@ -44,7 +44,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // 1. Fetch parent shot (must be done)
+    const storage = getServerSupabase();
+
     const { data: parentShot, error: parentError } = await supabase
       .from('shots')
       .select('*')
@@ -59,7 +60,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Parent shot is not ready for editing' }, { status: 400 });
     }
 
-    // 2. Fetch project assets
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('*')
@@ -67,19 +67,30 @@ export async function POST(request: Request) {
 
     if (assetsError) throw assetsError;
 
-    // 3. Resolve tags
-    const { resolved: referencedAssets } = resolveTags(message, assets || []);
+    const { data: allShots, error: shotsError } = await supabase
+      .from('shots')
+      .select('*')
+      .eq('project_id', projectId);
 
-    // 4. Build video context
+    if (shotsError) throw shotsError;
+
+    const { resolved: referencedAssets } = resolveTags(message, assets || []);
+    const { resolved: referencedShots } = resolveShotTags(message, allShots || [], {
+      excludeTurnIndex: parentShot.turn_index,
+    });
+
+    const parentInteractionId = parentShot.context_summary?.interactionId || null;
+
     const { instructions, contextSummary } = buildVideoContext({
       prompt: message,
       referencedAssets,
+      referencedShots,
       priorShot: parentShot,
       baseVideoUrl: parentShot.output_video_url,
       isEdit: true,
+      previousInteractionId: parentInteractionId,
     });
 
-    // 5. Insert new edit version of the shot (inherits turn_index of the parent)
     const { data: shot, error: insertError } = await supabase
       .from('shots')
       .insert({
@@ -97,24 +108,26 @@ export async function POST(request: Request) {
     if (insertError) throw insertError;
     createdShotId = shot.id;
 
-    // 6. Generate edited video using stateful interactions editing if available
-    const parentInteractionId = parentShot.context_summary?.interactionId || null;
+    const media = splitAssetMedia(referencedAssets);
+    const shotRefVideos = referencedShots.map(s => s.videoUrl);
+    const referenceVideos = Array.from(new Set([...media.videos, ...shotRefVideos]));
     const provider = getProvider();
 
     const result = await provider.generateVideo({
       prompt: message,
       instructions,
-      referenceImages: referencedAssets.map(a => a.url),
-      referenceVideos: [],
+      referenceImages: media.images,
+      referenceVideos,
+      referenceAudios: media.audios,
       baseVideo: parentShot.output_video_url,
       previousInteractionId: parentInteractionId,
     });
 
     let finalUrl = '';
+    let originalSize: number | null = null;
+    let compressedSize: number | null = null;
 
     if (result.url && !result.bytes) {
-      // Mock provider returns local public URLs like "/demo/videos/edit.mp4"
-      // We read the local file and upload it to Supabase Storage so it gets a real Supabase URL!
       try {
         const fs = require('fs');
         const path = require('path');
@@ -122,61 +135,31 @@ export async function POST(request: Request) {
 
         if (fs.existsSync(localPath)) {
           const fileBytes = fs.readFileSync(localPath);
-          const fileId = crypto.randomUUID();
-          const filePath = `videos/${projectId}/${fileId}.mp4`;
-
-          const { error: uploadError } = await supabase.storage
-            .from('assets')
-            .upload(filePath, fileBytes, {
-              contentType: 'video/mp4',
-              duplex: 'half',
-            } as any);
-
-          if (uploadError) {
-            console.error('Supabase Storage mock upload error:', uploadError);
-            finalUrl = result.url; // Fallback
-          } else {
-            const { data: { publicUrl } } = supabase.storage
-              .from('assets')
-              .getPublicUrl(filePath);
-            finalUrl = publicUrl;
-          }
+          const uploaded = await uploadVideoToStorage(storage, projectId, fileBytes);
+          finalUrl = uploaded.publicUrl;
+          originalSize = uploaded.originalSize;
+          compressedSize = uploaded.compressedSize;
         } else {
           finalUrl = result.url;
         }
       } catch (err) {
         console.error('Failed to read mock file for upload:', err);
-        finalUrl = result.url;
+        finalUrl = result.url || '';
       }
     } else if (result.bytes) {
-      // Real provider: upload generated video buffer to storage
-      const fileId = crypto.randomUUID();
-      const filePath = `videos/${projectId}/${fileId}.mp4`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('assets')
-        .upload(filePath, result.bytes, {
-          contentType: result.contentType || 'video/mp4',
-          duplex: 'half',
-        } as any);
-
-      if (uploadError) {
-        throw new Error(`Failed to upload generated video: ${uploadError.message}`);
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('assets')
-        .getPublicUrl(filePath);
-
-      finalUrl = publicUrl;
+      const uploaded = await uploadVideoToStorage(storage, projectId, result.bytes, result.contentType);
+      finalUrl = uploaded.publicUrl;
+      originalSize = uploaded.originalSize;
+      compressedSize = uploaded.compressedSize;
     } else {
       throw new Error('AI provider returned empty response.');
     }
 
-    // 7. Update database record with final URL, status: done, and interaction ID
     const updatedSummary = {
       ...contextSummary,
-      interactionId: result.interactionId || null,
+      interactionId: result.interactionId || parentInteractionId,
+      originalSize,
+      compressedSize,
     };
 
     const { data: completedShot, error: updateError } = await supabase
@@ -196,8 +179,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('POST /api/shots/edit error:', error);
 
-    if (createdShotId) {
-      // Update DB record to error state
+    if (createdShotId && supabase) {
       await supabase
         .from('shots')
         .update({

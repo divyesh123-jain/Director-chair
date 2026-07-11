@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase';
 import { getProvider } from '@/lib/ai/provider';
+import { uploadImageToStorage } from '@/lib/storage-upload';
 import { z } from 'zod';
 
 const generateAssetSchema = z.object({
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const storage = getServerSupabase();
+
     // 1. Verify tag is unique within the project (case-insensitive)
     const { data: existingAssets, error: tagCheckError } = await supabase
       .from('assets')
@@ -76,25 +79,8 @@ export async function POST(request: Request) {
 
         if (fs.existsSync(localPath)) {
           const fileBytes = fs.readFileSync(localPath);
-          const fileId = crypto.randomUUID();
-          const filePath = `assets/${projectId}/${fileId}.png`;
-
-          const { error: uploadError } = await supabase.storage
-            .from('assets')
-            .upload(filePath, fileBytes, {
-              contentType: 'image/png',
-              duplex: 'half',
-            } as any);
-
-          if (uploadError) {
-            console.error('Supabase Storage mock upload error:', uploadError);
-            finalUrl = result.url; // Fallback to local url
-          } else {
-            const { data: { publicUrl } } = supabase.storage
-              .from('assets')
-              .getPublicUrl(filePath);
-            finalUrl = publicUrl;
-          }
+          const uploaded = await uploadImageToStorage(storage, projectId, fileBytes);
+          finalUrl = uploaded.publicUrl;
         } else {
           finalUrl = result.url;
         }
@@ -103,27 +89,8 @@ export async function POST(request: Request) {
         finalUrl = result.url;
       }
     } else if (result.bytes) {
-      // Real provider returns raw bytes; we upload to Supabase Storage
-      const fileId = crypto.randomUUID();
-      const filePath = `assets/${projectId}/${fileId}.png`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('assets')
-        .upload(filePath, result.bytes, {
-          contentType: result.contentType || 'image/png',
-          duplex: 'half',
-        } as any);
-
-      if (uploadError) {
-        console.error('Supabase Storage upload error:', uploadError);
-        throw new Error(`Failed to upload generated asset: ${uploadError.message}`);
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('assets')
-        .getPublicUrl(filePath);
-
-      finalUrl = publicUrl;
+      const uploaded = await uploadImageToStorage(storage, projectId, result.bytes, result.contentType);
+      finalUrl = uploaded.publicUrl;
     } else {
       throw new Error('AI provider returned empty response.');
     }
