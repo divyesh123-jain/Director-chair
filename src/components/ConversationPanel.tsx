@@ -8,12 +8,15 @@ import {
   listAvailableShotTags,
 } from '@/lib/tags';
 import TagInput, { type TagSuggestion } from './TagInput';
+import { buildSceneNarrative } from '@/lib/prompt';
 
 interface ConversationPanelProps {
   assets: Asset[];
   shots: Shot[];
   editingShot: Shot | null;
+  extendingShot: Shot | null;
   onCancelEdit: () => void;
+  onCancelExtend: () => void;
   onSend: (message: string, isEdit: boolean, parentShotId?: string) => Promise<void>;
   loading: boolean;
   message: string;
@@ -36,7 +39,9 @@ export default function ConversationPanel({
   assets,
   shots,
   editingShot,
+  extendingShot,
   onCancelEdit,
+  onCancelExtend,
   onSend,
   loading,
   message,
@@ -102,9 +107,7 @@ export default function ConversationPanel({
       tag,
       kind: 'shot',
     }));
-    return editingShot
-      ? [...assetSuggestions, ...shotSuggestions]
-      : [...assetSuggestions, ...shotSuggestions];
+    return [...assetSuggestions, ...shotSuggestions];
   }, [assets, shots, editingShot]);
 
   const handleSubmit = async () => {
@@ -127,9 +130,30 @@ export default function ConversationPanel({
     return idx !== -1 ? idx + 1 : editingShot.turn_index + 1;
   };
 
+  const getExtendingShotNumber = () => {
+    if (!extendingShot) return 0;
+    const topLevel = shots.filter(s => s.parent_shot_id === null);
+    const idx = topLevel.findIndex(s => s.id === extendingShot.id);
+    return idx !== -1 ? idx + 1 : extendingShot.turn_index + 1;
+  };
+
+  // Build a human-readable narrative of the shot being edited
+  const editSceneNarrative = editingShot ? buildSceneNarrative(editingShot) : null;
+  const extendSceneNarrative = extendingShot ? buildSceneNarrative(extendingShot) : null;
+
   const sortedShots = [...shots].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
+
+  // Derive placeholder and mode label
+  const isInEditMode = !!editingShot;
+  const isInExtendMode = !!extendingShot;
+
+  const inputPlaceholder = isInExtendMode
+    ? `Describe what happens next after Shot ${getExtendingShotNumber()} (or leave blank to auto-continue)...`
+    : isInEditMode
+    ? `Swap @tom with @jerry, match lighting from @shot-3...`
+    : `@hero walks on the bridge of @spaceship, cinematic wide shot`;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-zinc-900/10 overflow-hidden">
@@ -138,12 +162,38 @@ export default function ConversationPanel({
           <h2 className="text-sm font-semibold text-zinc-200 tracking-wide uppercase">Director&apos;s Chat</h2>
           <p className="text-[11px] text-zinc-500 mt-0.5">Orchestrate your timeline using natural language prompts</p>
         </div>
+
+        {/* Edit mode banner */}
         {editingShot && (
-          <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-xs text-amber-400 font-semibold">
-            <span>Editing Shot {getEditingShotNumber()} — changes preserve everything else</span>
-            <button onClick={onCancelEdit} className="hover:text-amber-200 ml-1 transition-colors">
-              ✕
-            </button>
+          <div className="flex flex-col items-end gap-1 max-w-[260px]">
+            <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-xs text-amber-400 font-semibold">
+              <span>✏️ Editing Shot {getEditingShotNumber()}</span>
+              <button onClick={onCancelEdit} className="hover:text-amber-200 ml-1 transition-colors">
+                ✕
+              </button>
+            </div>
+            {editSceneNarrative && (
+              <p className="text-[9px] text-zinc-500 text-right leading-relaxed truncate max-w-full" title={editSceneNarrative}>
+                Context: {editSceneNarrative.slice(0, 80)}{editSceneNarrative.length > 80 ? '…' : ''}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Extend mode banner */}
+        {extendingShot && (
+          <div className="flex flex-col items-end gap-1 max-w-[260px]">
+            <div className="flex items-center gap-2 px-3 py-1 bg-teal-500/10 border border-teal-500/20 rounded-full text-xs text-teal-400 font-semibold">
+              <span>↗ Extending Shot {getExtendingShotNumber()}</span>
+              <button onClick={onCancelExtend} className="hover:text-teal-200 ml-1 transition-colors">
+                ✕
+              </button>
+            </div>
+            {extendSceneNarrative && (
+              <p className="text-[9px] text-zinc-500 text-right leading-relaxed truncate max-w-full" title={extendSceneNarrative}>
+                Context: {extendSceneNarrative.slice(0, 80)}{extendSceneNarrative.length > 80 ? '…' : ''}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -160,26 +210,42 @@ export default function ConversationPanel({
         ) : (
           sortedShots.map(shot => {
             const isEdit = !!shot.parent_shot_id;
+            const isExtend = !!shot.context_summary?.isExtend;
             return (
               <div key={shot.id} className="space-y-3">
-                <div className={`flex ${isEdit ? 'justify-center' : 'justify-end'}`}>
+                <div className={`flex ${isEdit ? 'justify-center' : isExtend ? 'justify-start' : 'justify-end'}`}>
                   <div
                     className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-sm relative ${
-                      isEdit
+                      isExtend
+                        ? 'bg-teal-950/30 border border-teal-900/40 text-teal-100'
+                        : isEdit
                         ? 'bg-amber-950/30 border border-amber-900/40 text-amber-100'
                         : 'bg-zinc-800 border border-zinc-700/50 text-zinc-100'
                     }`}
                   >
                     <p className="font-light leading-relaxed whitespace-pre-wrap">{shot.prompt}</p>
                     <span className="absolute bottom-1 right-2 text-[9px] text-zinc-500 font-mono">
-                      {isEdit ? `Edit → ${getShotVersionLabel(shot, shots)}` : `Shot ${shot.turn_index + 1}`}
+                      {isExtend
+                        ? `Extend → Shot ${shot.turn_index + 1}`
+                        : isEdit
+                        ? `Edit → ${getShotVersionLabel(shot, shots)}`
+                        : `Shot ${shot.turn_index + 1}`}
                     </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-zinc-500 font-mono">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isEdit ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isExtend ? 'bg-teal-500' : isEdit ? 'bg-amber-500' : 'bg-indigo-500'
+                    }`}
+                  />
                   <span>
-                    System: {isEdit ? `Edited ${getShotVersionLabel(shot, shots)}` : `Generated Shot ${shot.turn_index + 1}`}
+                    System:{' '}
+                    {isExtend
+                      ? `Extended → Shot ${shot.turn_index + 1}`
+                      : isEdit
+                      ? `Edited ${getShotVersionLabel(shot, shots)}`
+                      : `Generated Shot ${shot.turn_index + 1}`}
                   </span>
                   <span className="text-[10px] text-zinc-600">
                     {new Date(shot.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -199,6 +265,21 @@ export default function ConversationPanel({
       </div>
 
       <div className="p-6 border-t border-zinc-800 bg-zinc-950">
+        {/* Extend mode inline hint */}
+        {isInExtendMode && (
+          <div className="mb-3 px-3 py-2 rounded-xl bg-teal-950/20 border border-teal-800/30 text-[10px] text-teal-400 font-medium">
+            ↗ Continuing Shot {getExtendingShotNumber()} — the AI will see the full context of that shot and pick up where it left off.
+            Leave the box empty to auto-continue, or type a direction below.
+          </div>
+        )}
+
+        {/* Edit mode inline hint */}
+        {isInEditMode && editSceneNarrative && (
+          <div className="mb-3 px-3 py-2 rounded-xl bg-amber-950/20 border border-amber-800/30 text-[10px] text-amber-400 font-medium">
+            ✏️ The AI knows Shot {getEditingShotNumber()} contains: <span className="opacity-80">{editSceneNarrative.slice(0, 120)}{editSceneNarrative.length > 120 ? '…' : ''}</span>
+          </div>
+        )}
+
         <form
           onSubmit={e => {
             e.preventDefault();
@@ -212,11 +293,7 @@ export default function ConversationPanel({
             onSubmit={handleSubmit}
             disabled={loading}
             suggestions={suggestions}
-            placeholder={
-              editingShot
-                ? "Swap @tom with @jerry, match lighting from @shot-3..."
-                : "@hero walks on the bridge of @spaceship, cinematic wide shot"
-            }
+            placeholder={inputPlaceholder}
             footer={
               <>
                 <div className="flex items-center gap-3 pl-2">
@@ -232,10 +309,14 @@ export default function ConversationPanel({
                 </div>
                 <button
                   type="submit"
-                  disabled={!message.trim() || loading}
-                  className="py-1.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-lg text-xs font-bold"
+                  disabled={loading || (isInExtendMode ? false : !message.trim())}
+                  className={`py-1.5 px-4 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-lg text-xs font-bold transition-colors ${
+                    isInExtendMode
+                      ? 'bg-teal-600 hover:bg-teal-500'
+                      : 'bg-indigo-600 hover:bg-indigo-500'
+                  }`}
                 >
-                  Send
+                  {isInExtendMode ? 'Extend ↗' : 'Send'}
                 </button>
               </>
             }

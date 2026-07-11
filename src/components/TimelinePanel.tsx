@@ -12,7 +12,9 @@ interface TimelinePanelProps {
   onDeleteShot: (id: string) => void;
   onReusePrompt: (prompt: string) => void;
   onRegenerate: (shotId: string) => void;
+  onExtend: (shot: Shot, direction: string) => void;
   isEditingActive: boolean;
+  isExtendingActive: boolean;
 }
 
 export default function TimelinePanel({
@@ -22,7 +24,9 @@ export default function TimelinePanel({
   onDeleteShot,
   onReusePrompt,
   onRegenerate,
+  onExtend,
   isEditingActive,
+  isExtendingActive,
 }: TimelinePanelProps) {
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -120,7 +124,9 @@ export default function TimelinePanel({
               onDeleteShot={onDeleteShot}
               onReusePrompt={onReusePrompt}
               onRegenerate={onRegenerate}
+              onExtend={onExtend}
               isEditingActive={isEditingActive}
+              isExtendingActive={isExtendingActive}
             />
           ))
         )}

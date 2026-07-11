@@ -10,11 +10,12 @@ import { getBrowserSupabase } from '@/lib/supabase';
 
 export default function ProjectWorkspace({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  
+
   const [project, setProject] = useState<Project | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [shots, setShots] = useState<Shot[]>([]);
   const [editingShot, setEditingShot] = useState<Shot | null>(null);
+  const [extendingShot, setExtendingShot] = useState<Shot | null>(null);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
@@ -103,6 +104,9 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
     }
   };
 
+  /**
+   * Handles both new-shot generation and shot edits from the ConversationPanel.
+   */
   const handleSendPrompt = async (message: string, isEdit: boolean, parentShotId?: string) => {
     if (!project) return;
     setLoading(true);
@@ -131,6 +135,7 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
 
     setShots(prev => [...prev, tempShot]);
     setEditingShot(null);
+    setExtendingShot(null);
 
     try {
       const res = await fetch(apiPath, {
@@ -159,6 +164,87 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
       if (project) {
         await refreshProjectData(project.id);
       }
+    }
+  };
+
+  /**
+   * Extend clip — creates a new top-level shot that continues from the parent.
+   * Called directly from ShotCard's inline input OR from ConversationPanel extend mode.
+   */
+  const handleExtend = async (shot: Shot, direction: string) => {
+    if (!project) return;
+    setLoading(true);
+    setExtendingShot(null);
+
+    // Optimistic temp shot at the next timeline slot
+    const tempId = crypto.randomUUID();
+    const effectivePrompt = direction.trim()
+      ? direction
+      : `Continue the video seamlessly from where Shot ${shot.turn_index + 1} ends.`;
+
+    const tempShot: Shot = {
+      id: tempId,
+      project_id: project.id,
+      turn_index: shots.filter(s => s.parent_shot_id === null).length,
+      prompt: effectivePrompt,
+      referenced_asset_ids: [],
+      parent_shot_id: null,
+      output_video_url: null,
+      context_summary: { isExtend: true, extendedFromShotId: shot.id } as any,
+      status: 'generating',
+      error: null,
+      created_at: new Date().toISOString(),
+    };
+
+    setShots(prev => [...prev, tempShot]);
+
+    try {
+      const res = await fetch('/api/shots/extend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          parentShotId: shot.id,
+          message: direction,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Extend failed');
+
+      setShots(prev => prev.map(s => (s.id === tempId ? json.data : s)));
+    } catch (err: any) {
+      console.error(err);
+      setShots(prev =>
+        prev.map(s =>
+          s.id === tempId
+            ? { ...s, status: 'error', error: err.message || 'Extend aborted' }
+            : s
+        )
+      );
+    } finally {
+      setLoading(false);
+      if (project) {
+        await refreshProjectData(project.id);
+      }
+    }
+  };
+
+  /**
+   * Called from ConversationPanel when the user is in "extend mode" and hits Send.
+   * Routes to handleExtend with the extendingShot + message.
+   */
+  const handleSendInExtendMode = async (message: string) => {
+    if (!extendingShot) return;
+    await handleExtend(extendingShot, message);
+  };
+
+  // Unified send handler — dispatches to correct flow based on active mode
+  const handleUnifiedSend = async (message: string, isEdit: boolean, parentShotId?: string) => {
+    if (extendingShot) {
+      await handleSendInExtendMode(message);
+    } else {
+      await handleSendPrompt(message, isEdit, parentShotId);
     }
   };
 
@@ -216,7 +302,7 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-                Director's Chair
+                Director&apos;s Chair
               </h1>
             </div>
           </div>
@@ -245,8 +331,10 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
           assets={assets}
           shots={shots}
           editingShot={editingShot}
+          extendingShot={extendingShot}
           onCancelEdit={() => setEditingShot(null)}
-          onSend={handleSendPrompt}
+          onCancelExtend={() => setExtendingShot(null)}
+          onSend={handleUnifiedSend}
           loading={loading}
           message={message}
           setMessage={setMessage}
@@ -254,11 +342,25 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
         <TimelinePanel
           shots={shots}
           projectId={project.id}
-          onSelectForEdit={setEditingShot}
+          onSelectForEdit={(shot) => {
+            setExtendingShot(null);
+            setEditingShot(shot);
+          }}
           onDeleteShot={handleDeleteShot}
           onReusePrompt={(p) => setMessage(p)}
           onRegenerate={handleRegenerate}
+          onExtend={(shot, direction) => {
+            setEditingShot(null);
+            // If direction is already provided (from inline input), fire immediately
+            if (direction !== undefined) {
+              handleExtend(shot, direction);
+            } else {
+              // Switch to extend mode in ConversationPanel
+              setExtendingShot(shot);
+            }
+          }}
           isEditingActive={!!editingShot}
+          isExtendingActive={!!extendingShot}
         />
       </main>
     </div>

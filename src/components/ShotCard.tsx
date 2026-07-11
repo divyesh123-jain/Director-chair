@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Shot } from '@/lib/types';
 import ContextInspector from './ContextInspector';
 
@@ -11,7 +11,9 @@ interface ShotCardProps {
   onDeleteShot: (id: string) => void;
   onReusePrompt: (prompt: string) => void;
   onRegenerate: (shotId: string) => void;
+  onExtend: (shot: Shot, direction: string) => void;
   isEditingActive: boolean;
+  isExtendingActive: boolean;
 }
 
 export default function ShotCard({
@@ -21,7 +23,9 @@ export default function ShotCard({
   onDeleteShot,
   onReusePrompt,
   onRegenerate,
+  onExtend,
   isEditingActive,
+  isExtendingActive,
 }: ShotCardProps) {
   const versions = [...shotsInTurn].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -29,10 +33,19 @@ export default function ShotCard({
 
   const [selectedVersionIdx, setSelectedVersionIdx] = useState(versions.length - 1);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [showExtendInput, setShowExtendInput] = useState(false);
+  const [extendDirection, setExtendDirection] = useState('');
+  const extendInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setSelectedVersionIdx(versions.length - 1);
   }, [shotsInTurn.length]);
+
+  useEffect(() => {
+    if (showExtendInput) {
+      setTimeout(() => extendInputRef.current?.focus(), 50);
+    }
+  }, [showExtendInput]);
 
   const activeShot = versions[selectedVersionIdx];
   if (!activeShot) return null;
@@ -43,17 +56,40 @@ export default function ShotCard({
       ? shotIndex
       : undefined;
 
+  const handleExtendClick = () => {
+    setShowExtendInput(true);
+  };
+
+  const handleExtendSubmit = () => {
+    onExtend(activeShot, extendDirection.trim());
+    setShowExtendInput(false);
+    setExtendDirection('');
+  };
+
+  const handleExtendCancel = () => {
+    setShowExtendInput(false);
+    setExtendDirection('');
+  };
+
+  const isExtendBadge = !!activeShot.context_summary?.isExtend;
+  const extendedFromId = activeShot.context_summary?.extendedFromShotId;
+
   return (
     <div className="border border-zinc-800 bg-zinc-950/60 rounded-2xl overflow-hidden transition-all duration-300 hover:border-zinc-700">
       <div className="p-4 flex justify-between items-center bg-zinc-900/30 border-b border-zinc-900/50">
         <div>
-          <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+          <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
             Shot {shotIndex + 1}
             {versions.length > 1 && (
-              <span className="text-zinc-500 font-normal ml-1">v{selectedVersionIdx + 1}</span>
+              <span className="text-zinc-500 font-normal">v{selectedVersionIdx + 1}</span>
+            )}
+            {isExtendBadge && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 font-bold uppercase tracking-widest">
+                Extended
+              </span>
             )}
           </h4>
-          <span className="text-[10px] text-zinc-500 italic truncate max-w-[150px] block">
+          <span className="text-[10px] text-zinc-500 italic truncate max-w-[160px] block">
             &quot;{activeShot.prompt}&quot;
           </span>
         </div>
@@ -133,13 +169,59 @@ export default function ShotCard({
             </button>
             <button
               onClick={() => onSelectForEdit(activeShot)}
-              disabled={activeShot.status !== 'done' || isEditingActive}
+              disabled={activeShot.status !== 'done' || isEditingActive || isExtendingActive}
               className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 disabled:opacity-40 text-zinc-300 text-xs font-bold rounded-lg"
             >
               Edit shot
             </button>
+            <button
+              onClick={handleExtendClick}
+              disabled={activeShot.status !== 'done' || isEditingActive || isExtendingActive || showExtendInput}
+              className="px-3 py-1.5 bg-teal-950/40 hover:bg-teal-900/50 border border-teal-800/40 hover:border-teal-700/60 disabled:opacity-40 text-teal-300 text-xs font-bold rounded-lg transition-colors"
+              title="Extend this shot — continue the video from where it ends"
+            >
+              Extend ↗
+            </button>
           </div>
         </div>
+
+        {/* Extend direction inline input */}
+        {showExtendInput && (
+          <div className="mt-2 p-3 rounded-xl bg-teal-950/20 border border-teal-800/30 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+            <p className="text-[10px] font-semibold text-teal-400 uppercase tracking-wider">
+              Extend Shot {shotIndex + 1} — describe what happens next (optional)
+            </p>
+            <div className="flex gap-2">
+              <input
+                ref={extendInputRef}
+                type="text"
+                value={extendDirection}
+                onChange={e => setExtendDirection(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleExtendSubmit();
+                  if (e.key === 'Escape') handleExtendCancel();
+                }}
+                placeholder={`e.g. Tom trips and falls, camera pulls back...`}
+                className="flex-1 bg-zinc-900 border border-zinc-800 focus:border-teal-600 focus:outline-none rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600"
+              />
+              <button
+                onClick={handleExtendSubmit}
+                className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                Extend
+              </button>
+              <button
+                onClick={handleExtendCancel}
+                className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 text-xs rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-[9px] text-zinc-600">
+              Leave blank to auto-continue from Shot {shotIndex + 1}&apos;s last frame. Press Enter or click Extend.
+            </p>
+          </div>
+        )}
 
         {isInspectorOpen && (
           <ContextInspector summary={activeShot.context_summary} parentShotNumber={parentShotNumber} />

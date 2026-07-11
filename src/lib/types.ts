@@ -43,6 +43,12 @@ export interface ContextSummary {
   parentShotId: string | null;
   interactionId?: string | null;
   editMode?: boolean;
+  /** True when this shot was created via the Extend Clip feature */
+  isExtend?: boolean;
+  /** ID of the shot this was extended from (for extend-type shots) */
+  extendedFromShotId?: string | null;
+  /** Reconstructed plain-English scene narrative of the parent shot */
+  sceneNarrative?: string | null;
   userPrompt?: string;
   instructions?: string[];
   referencedShots?: ResolvedShotRef[];

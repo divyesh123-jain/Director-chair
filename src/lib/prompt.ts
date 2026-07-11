@@ -11,6 +11,9 @@ export function consistencyInstruction(priorShot: Shot | null): string | null {
 export const EDIT_PRESERVE_INSTRUCTION =
   'This is a non-destructive edit of the provided base video. Change ONLY the element or property described in the instruction. Preserve character identity, composition, motion, and all unrequested elements exactly.';
 
+export const EXTEND_INSTRUCTION =
+  'This is a seamless continuation of the provided base video. Pick up exactly where the video ends — match motion trajectory, character poses, lighting, camera angle, and environment. Generate what happens next in a natural, physically consistent way.';
+
 export const ELEMENT_SWAP_INSTRUCTION_TEMPLATE =
   'Replace the visual element associated with @{from} using the reference identity/appearance of @{to}. Preserve all other motion, lighting, camera, and scene composition.';
 
@@ -26,6 +29,42 @@ export function buildSwapInstruction(message: string): string | null {
   return ELEMENT_SWAP_INSTRUCTION_TEMPLATE.replace('{from}', swap.from).replace('{to}', swap.to);
 }
 
+/**
+ * Reconstructs a plain-English description of what a shot contains, based on
+ * its stored context_summary and prompt. Used to give the AI full context when
+ * editing or extending a shot.
+ */
+export function buildSceneNarrative(shot: Shot): string {
+  const parts: string[] = [];
+
+  const userPrompt = shot.context_summary?.userPrompt || shot.prompt;
+  if (userPrompt) {
+    parts.push(`Original scene description: "${userPrompt}"`);
+  }
+
+  const refs = shot.context_summary?.references || [];
+  if (refs.length > 0) {
+    const tagList = refs.map(r => `@${r.tag} (${r.type})`).join(', ');
+    parts.push(`Referenced assets in the scene: ${tagList}`);
+  }
+
+  const referencedShots = shot.context_summary?.referencedShots || [];
+  if (referencedShots.length > 0) {
+    const shotList = referencedShots.map(s => s.label).join(', ');
+    parts.push(`Referenced prior shots for context: ${shotList}`);
+  }
+
+  if (shot.context_summary?.swapInstruction) {
+    parts.push(`A previous swap was applied: ${shot.context_summary.swapInstruction}`);
+  }
+
+  if (shot.context_summary?.isExtend) {
+    parts.push('This shot was itself an extension of a previous shot.');
+  }
+
+  return parts.join(' | ');
+}
+
 export interface VideoGenInput {
   prompt: string;
   referencedAssets: Asset[];
@@ -33,8 +72,11 @@ export interface VideoGenInput {
   priorShot: Shot | null;
   baseVideoUrl: string | null;
   isEdit: boolean;
+  isExtend?: boolean;
   previousInteractionId?: string | null;
   extraReferenceVideos?: string[];
+  /** Pre-built scene narrative of the parent shot (for edits/extends) */
+  sceneNarrative?: string | null;
 }
 
 function mimeForAsset(type: Asset['type']): string {
@@ -84,12 +126,31 @@ export function buildVideoContext(input: VideoGenInput): {
       ? input.priorShot.context_summary.interactionId
       : null);
 
+  // --- Scene narrative injection (edit / extend) ---
+  if ((input.isEdit || input.isExtend) && input.sceneNarrative) {
+    instructions.push(
+      `Context of the shot being ${input.isExtend ? 'extended' : 'edited'}: ${input.sceneNarrative}`
+    );
+  }
+
   if (cons) instructions.push(cons);
-  if (input.isEdit) instructions.push(EDIT_PRESERVE_INSTRUCTION);
+
+  if (input.isExtend) {
+    instructions.push(EXTEND_INSTRUCTION);
+  } else if (input.isEdit) {
+    instructions.push(EDIT_PRESERVE_INSTRUCTION);
+  }
+
   if (swapInstruction) instructions.push(swapInstruction);
 
+  // Extend clips always use interactions.create — the Gemini API does NOT support
+  // baseVideo extension via interactions.edit (throws 400).
   const omniEndpoint: ContextSummary['omniEndpoint'] =
-    input.isEdit && previousInteractionId ? 'interactions.edit' : 'interactions.create';
+    input.isExtend
+      ? 'interactions.create'
+      : input.isEdit && previousInteractionId
+      ? 'interactions.edit'
+      : 'interactions.create';
 
   const contextSummary: ContextSummary = {
     references: input.referencedAssets.map(a => ({
@@ -101,9 +162,12 @@ export function buildVideoContext(input: VideoGenInput): {
     consistencyInstruction: cons,
     physicsInstruction: PHYSICS_INSTRUCTION,
     baseVideoUrl: input.baseVideoUrl,
-    parentShotId: input.isEdit && input.priorShot ? input.priorShot.id : null,
+    parentShotId: (input.isEdit || input.isExtend) && input.priorShot ? input.priorShot.id : null,
     interactionId: null,
     editMode: input.isEdit,
+    isExtend: input.isExtend ?? false,
+    extendedFromShotId: input.isExtend && input.priorShot ? input.priorShot.id : null,
+    sceneNarrative: input.sceneNarrative ?? null,
     userPrompt: input.prompt,
     instructions: [...instructions],
     referencedShots: input.referencedShots || [],

@@ -6,10 +6,11 @@ import { buildVideoContext, splitAssetMedia, buildSceneNarrative } from '@/lib/p
 import { uploadVideoToStorage } from '@/lib/storage-upload';
 import { z } from 'zod';
 
-const editShotSchema = z.object({
+const extendShotSchema = z.object({
   projectId: z.string().uuid(),
   parentShotId: z.string().uuid(),
-  message: z.string().min(1),
+  /** Optional user direction — e.g. "Tom trips and falls". If omitted, auto-continue. */
+  message: z.string().optional().default(''),
 });
 
 export async function POST(request: Request) {
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   let supabase: any = null;
   try {
     const body = await request.json().catch(() => ({}));
-    const parsed = editShotSchema.safeParse(body);
+    const parsed = extendShotSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.message }, { status: 400 });
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
 
     const storage = getServerSupabase();
 
+    // Load the shot we are extending from
     const { data: parentShot, error: parentError } = await supabase
       .from('shots')
       .select('*')
@@ -57,9 +59,10 @@ export async function POST(request: Request) {
     }
 
     if (parentShot.status !== 'done' || !parentShot.output_video_url) {
-      return NextResponse.json({ error: 'Parent shot is not ready for editing' }, { status: 400 });
+      return NextResponse.json({ error: 'Parent shot is not ready to extend' }, { status: 400 });
     }
 
+    // Assets and all existing shots for tag resolution
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('*')
@@ -74,52 +77,65 @@ export async function POST(request: Request) {
 
     if (shotsError) throw shotsError;
 
+    // Resolve any asset / shot tags from the user's optional direction
     const { resolved: referencedAssets } = resolveTags(message, assets || []);
-    const { resolved: referencedShots } = resolveShotTags(message, allShots || [], {
-      excludeTurnIndex: parentShot.turn_index,
-    });
+    const { resolved: referencedShots } = resolveShotTags(message, allShots || []);
 
-    const parentInteractionId = parentShot.context_summary?.interactionId || null;
-
-    // --- Build scene narrative from parent shot context ---
+    // Build the scene narrative so the model knows exactly what was in the parent
     const sceneNarrative = buildSceneNarrative(parentShot);
 
+    // The effective prompt: use user's direction if provided, otherwise auto-continue
+    const effectivePrompt = message.trim()
+      ? message
+      : `Continue the video seamlessly from where Shot ${parentShot.turn_index + 1} ends.`;
+
+    // IMPORTANT: The Gemini API does NOT support "baseVideo" for video extension.
+    // We pass the parent video as a REFERENCE only (not baseVideoUrl) so the model
+    // can see it visually, but we use interactions.create (not interactions.edit).
     const { instructions, contextSummary } = buildVideoContext({
-      prompt: message,
+      prompt: effectivePrompt,
       referencedAssets,
       referencedShots,
       priorShot: parentShot,
-      baseVideoUrl: parentShot.output_video_url,
-      isEdit: true,
-      previousInteractionId: parentInteractionId,
+      baseVideoUrl: null,           // ← must be null; API rejects baseVideo for extends
+      isEdit: false,
+      isExtend: true,
+      previousInteractionId: null,  // ← always fresh interaction for extends
+      extraReferenceVideos: [parentShot.output_video_url], // ← pass as reference instead
       sceneNarrative,
     });
 
+    // New top-level turn — not a version of the parent, but the next shot
+    const topLevelCount = (allShots || []).filter((s: any) => s.parent_shot_id === null).length;
+    const newTurnIndex = topLevelCount;
+
     // =====================================================
-    // STRUCTURED LOG — Edit Shot
+    // STRUCTURED LOG — Extend Shot
     // =====================================================
-    console.log('\n[EDIT SHOT] ============================================');
+    console.log('\n[EXTEND SHOT] ==========================================');
     console.log(`  Parent Shot ID    : ${parentShot.id}`);
     console.log(`  Parent Turn Index : ${parentShot.turn_index}`);
     console.log(`  Parent Prompt     : "${parentShot.prompt}"`);
     console.log(`  Scene Narrative   : "${sceneNarrative}"`);
-    console.log(`  User Instruction  : "${message}"`);
-    console.log(`  Prev Interaction  : ${parentInteractionId ?? 'none (will create new)'}`);
+    console.log(`  User Direction    : "${message || '(none — auto-continue)'}"`);
+    console.log(`  Effective Prompt  : "${effectivePrompt}"`);
+    console.log(`  Prev Interaction  : none (extend always uses interactions.create)`);
+    console.log(`  New Turn Index    : ${newTurnIndex}`);
     console.log(`  Omni Endpoint     : ${contextSummary.omniEndpoint}`);
     console.log(`  Final Instructions:`);
     instructions.forEach((inst, i) => console.log(`    [${i + 1}] ${inst}`));
     console.log(`  Referenced Assets : ${referencedAssets.map(a => `@${a.tag}`).join(', ') || 'none'}`);
-    console.log(`  Referenced Shots  : ${referencedShots.map(s => s.label).join(', ') || 'none'}`);
-    console.log('[EDIT SHOT] ============================================\n');
+    console.log('[EXTEND SHOT] ==========================================\n');
 
     const { data: shot, error: insertError } = await supabase
       .from('shots')
       .insert({
         project_id: projectId,
-        turn_index: parentShot.turn_index,
-        prompt: message,
+        // NEW top-level slot — not a version of the parent
+        turn_index: newTurnIndex,
+        prompt: effectivePrompt,
         referenced_asset_ids: referencedAssets.map(a => a.id),
-        parent_shot_id: parentShotId,
+        parent_shot_id: null,
         status: 'generating',
         context_summary: contextSummary,
       })
@@ -130,31 +146,38 @@ export async function POST(request: Request) {
     createdShotId = shot.id;
 
     const media = splitAssetMedia(referencedAssets);
-    const shotRefVideos = referencedShots.map(s => s.videoUrl);
-    const referenceVideos = Array.from(new Set([...media.videos, ...shotRefVideos]));
-    const provider = getProvider();
 
+    // Always include the parent shot video as the primary reference
+    const referenceVideos = Array.from(
+      new Set([
+        parentShot.output_video_url,
+        ...media.videos,
+        ...referencedShots.map(s => s.videoUrl),
+      ])
+    );
+
+    const provider = getProvider();
     const model = process.env.OMNI_MODEL_ID || 'gemini-omni-flash-preview';
-    console.log(`[EDIT SHOT] Calling provider.generateVideo — model: ${model}`);
+    console.log(`[EXTEND SHOT] Calling provider.generateVideo — model: ${model}`);
 
     const result = await provider.generateVideo({
-      prompt: message,
+      prompt: effectivePrompt,
       instructions,
       referenceImages: media.images,
-      referenceVideos,
+      referenceVideos,  // parent video is already in here as a reference
       referenceAudios: media.audios,
-      baseVideo: parentShot.output_video_url,
-      previousInteractionId: parentInteractionId,
+      baseVideo: null,             // ← MUST be null — API doesn't support video extension
+      previousInteractionId: null, // ← fresh interaction.create
     });
 
     // =====================================================
     // RESPONSE LOG
     // =====================================================
-    console.log('\n[EDIT SHOT RESPONSE] ===================================');
+    console.log('\n[EXTEND SHOT RESPONSE] ================================');
     console.log(`  Result Interaction ID : ${result.interactionId ?? 'none'}`);
     console.log(`  Has bytes             : ${result.bytes ? `yes (${result.bytes.byteLength} bytes)` : 'no'}`);
     console.log(`  Has url               : ${result.url ?? 'no'}`);
-    console.log('[EDIT SHOT RESPONSE] ===================================\n');
+    console.log('[EXTEND SHOT RESPONSE] ================================\n');
 
     let finalUrl = '';
     let originalSize: number | null = null;
@@ -190,7 +213,8 @@ export async function POST(request: Request) {
 
     const updatedSummary = {
       ...contextSummary,
-      interactionId: result.interactionId || parentInteractionId,
+      interactionId: result.interactionId || null,
+      extendedFromShotId: parentShotId,
       originalSize,
       compressedSize,
     };
@@ -208,17 +232,17 @@ export async function POST(request: Request) {
 
     if (updateError) throw updateError;
 
-    console.log(`[EDIT SHOT] Done — new shot ID: ${completedShot.id}, URL: ${finalUrl}`);
+    console.log(`[EXTEND SHOT] Done — new shot ID: ${completedShot.id}, turn: ${newTurnIndex}, URL: ${finalUrl}`);
     return NextResponse.json({ data: completedShot });
   } catch (error: any) {
-    console.error('POST /api/shots/edit error:', error);
+    console.error('POST /api/shots/extend error:', error);
 
     if (createdShotId && supabase) {
       await supabase
         .from('shots')
         .update({
           status: 'error',
-          error: error.message || 'Editing failed',
+          error: error.message || 'Extend failed',
         })
         .eq('id', createdShotId);
     }
