@@ -5,6 +5,7 @@ import AssetPanel from '@/components/AssetPanel';
 import ConversationPanel from '@/components/ConversationPanel';
 import TimelinePanel from '@/components/TimelinePanel';
 import type { Asset, Shot, Project } from '@/lib/types';
+import { getBrowserSupabase } from '@/lib/supabase';
 
 export default function Page() {
   const [project, setProject] = useState<Project | null>(null);
@@ -186,6 +187,16 @@ export default function Page() {
           <div className="text-[10px] text-zinc-500 font-mono">
             Provider: <span className="text-indigo-400 font-semibold uppercase">{process.env.NEXT_PUBLIC_AI_PROVIDER || 'mock'}</span>
           </div>
+          <button
+            onClick={async () => {
+              const supabase = getBrowserSupabase();
+              await supabase.auth.signOut();
+              window.location.href = '/landing';
+            }}
+            className="px-3 py-1.5 bg-zinc-800 hover:bg-rose-950/20 hover:text-rose-400 border border-zinc-700/50 rounded-lg text-xs font-semibold transition-all"
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase';
+import { getServerSupabaseClient } from '@/lib/supabase';
 import { z } from 'zod';
 
 const createProjectSchema = z.object({
@@ -8,10 +8,17 @@ const createProjectSchema = z.object({
 
 export async function GET() {
   try {
-    const supabase = getServerSupabase();
+    const supabase = await getServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { data: projects, error } = await supabase
       .from('projects')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -27,6 +34,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const supabase = await getServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const parsed = createProjectSchema.safeParse(body);
 
@@ -35,10 +49,9 @@ export async function POST(request: Request) {
     }
 
     const name = parsed.data.name || "Untitled Project";
-    const supabase = getServerSupabase();
     const { data: project, error } = await supabase
       .from('projects')
-      .insert({ name })
+      .insert({ name, user_id: user.id })
       .select('*')
       .single();
 

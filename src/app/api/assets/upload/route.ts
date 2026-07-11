@@ -17,7 +17,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Tag must be alphanumeric with underscores only' }, { status: 400 });
     }
 
-    const supabase = getServerSupabase();
+    const { getServerSupabaseClient } = await import('@/lib/supabase');
+    const supabase = await getServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Verify project ownership
+    const { data: projectCheck } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (!projectCheck) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // 1. Verify tag is unique (case-insensitive)
     const { data: existingAssets, error: tagCheckError } = await supabase
