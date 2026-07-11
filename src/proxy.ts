@@ -27,9 +27,20 @@ export default async function proxy(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const allCookies = request.cookies.getAll();
+  const hasSupabaseCookie = allCookies.some(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'));
+
+  let user = null;
+  if (hasSupabaseCookie) {
+    try {
+      const {
+        data: { user: supabaseUser },
+      } = await supabase.auth.getUser();
+      user = supabaseUser;
+    } catch (err) {
+      console.warn('Proxy session refresh failed:', err);
+    }
+  }
 
   const url = request.nextUrl.clone();
 
