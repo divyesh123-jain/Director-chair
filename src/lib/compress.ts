@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { writeFile, readFile, unlink } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
@@ -10,14 +11,33 @@ const execFileAsync = promisify(execFile);
 let ffmpegPath: string | null = null;
 
 async function getFfmpegPath(): Promise<string | null> {
-  if (ffmpegPath) return ffmpegPath;
+  if (ffmpegPath && existsSync(ffmpegPath)) return ffmpegPath;
+
+  const candidates: string[] = [];
+
+  if (process.env.FFMPEG_PATH) {
+    candidates.push(process.env.FFMPEG_PATH);
+  }
+
+  candidates.push(join(process.cwd(), 'node_modules/ffmpeg-static/ffmpeg'));
+
   try {
     const mod = await import('ffmpeg-static');
-    ffmpegPath = (mod.default as string) || null;
-    return ffmpegPath;
+    const fromPkg = mod.default as string | undefined;
+    if (fromPkg) candidates.unshift(fromPkg);
   } catch {
-    return null;
+    // ignore — fall back to cwd path
   }
+
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      ffmpegPath = candidate;
+      return ffmpegPath;
+    }
+  }
+
+  ffmpegPath = null;
+  return null;
 }
 
 export async function compressVideoBuffer(

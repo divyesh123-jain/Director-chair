@@ -13,8 +13,7 @@ export default function ContextInspector({ summary, parentShotNumber }: ContextI
 
   const isEdit = summary.editMode || !!summary.baseVideoUrl;
   const imageCount = summary.multimodalInputs?.filter(m => m.type === 'image').length ?? 0;
-  const videoCount = summary.multimodalInputs?.filter(m => m.type === 'video').length ?? 0;
-  const audioCount = summary.multimodalInputs?.filter(m => m.type === 'audio').length ?? 0;
+  const textRefCount = summary.textReferences?.length ?? summary.multimodalInputs?.filter(m => m.type === 'text_reference').length ?? 0;
 
   return (
     <div className="bg-zinc-950 rounded-xl p-3.5 border border-zinc-800 space-y-3 font-mono text-[11px] text-zinc-300">
@@ -100,18 +99,34 @@ export default function ContextInspector({ summary, parentShotNumber }: ContextI
         </div>
       )}
 
+      {summary.textReferences && summary.textReferences.length > 0 && (
+        <div>
+          <span className="text-[10px] text-zinc-500 block mb-1">Text continuity references:</span>
+          <div className="space-y-1.5">
+            {summary.textReferences.map((ref, i) => (
+              <div
+                key={i}
+                className="p-2 bg-zinc-900 border border-zinc-800/80 rounded text-[10px]"
+              >
+                <span className="text-amber-400 font-semibold">{ref.label}</span>
+                <p className="text-zinc-400 mt-0.5 leading-relaxed">{ref.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {summary.referencedShots && summary.referencedShots.length > 0 && (
         <div>
-          <span className="text-[10px] text-zinc-500 block mb-1">Referenced @shot tags:</span>
-          <div className="grid grid-cols-1 gap-1.5">
+          <span className="text-[10px] text-zinc-500 block mb-1">Referenced @shot tags (text only):</span>
+          <div className="flex flex-wrap gap-1.5">
             {summary.referencedShots.map(ref => (
-              <div
+              <span
                 key={ref.shotId}
-                className="flex items-center gap-2 p-1.5 bg-zinc-900 border border-zinc-800/80 rounded"
+                className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono"
               >
-                <video src={ref.videoUrl} className="w-12 h-8 rounded object-cover bg-black" muted />
-                <span className="text-zinc-300 font-mono text-[10px]">@{ref.label}</span>
-              </div>
+                @{ref.label}
+              </span>
             ))}
           </div>
         </div>
@@ -148,8 +163,8 @@ export default function ContextInspector({ summary, parentShotNumber }: ContextI
         <div className="flex gap-2 text-zinc-500">
           <span className="font-semibold">Multimodal payload:</span>
           <span>
-            {imageCount} image{imageCount !== 1 ? 's' : ''}, {videoCount} video
-            {videoCount !== 1 ? 's' : ''}, {audioCount} audio
+            {imageCount} image{imageCount !== 1 ? 's' : ''}, {textRefCount} text ref
+            {textRefCount !== 1 ? 's' : ''} (no video sent — API limitation)
           </span>
         </div>
 

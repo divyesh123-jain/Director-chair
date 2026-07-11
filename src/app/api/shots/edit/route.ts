@@ -109,18 +109,17 @@ export async function POST(request: Request) {
     createdShotId = shot.id;
 
     const media = splitAssetMedia(referencedAssets);
-    const shotRefVideos = referencedShots.map(s => s.videoUrl);
-    const referenceVideos = Array.from(new Set([...media.videos, ...shotRefVideos]));
     const provider = getProvider();
 
     const result = await provider.generateVideo({
       prompt: message,
       instructions,
       referenceImages: media.images,
-      referenceVideos,
-      referenceAudios: media.audios,
-      baseVideo: parentShot.output_video_url,
+      referenceVideos: [],
+      referenceAudios: [],
+      baseVideo: null,
       previousInteractionId: parentInteractionId,
+      isEdit: true,
     });
 
     let finalUrl = '';

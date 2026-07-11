@@ -1,15 +1,43 @@
-import type { Asset, Shot, ContextSummary, ResolvedShotRef, MultimodalInputRef } from './types';
+import type { Asset, Shot, ContextSummary, ResolvedShotRef, MultimodalInputRef, TextReference } from './types';
 
 export const PHYSICS_INSTRUCTION =
   'Respect real-world physical dynamics: consistent gravity, correct light source direction and cast shadows, and coherent perspective across the shot. Do not composite; render a physically plausible scene.';
 
-export function consistencyInstruction(priorShot: Shot | null): string | null {
-  if (!priorShot) return null;
-  return 'Maintain visual continuity with the previous shot: same characters (identity, wardrobe, proportions), same environment style, and consistent lighting mood. Only change what the new instruction explicitly requests.';
+/** Text-only continuity — Omni Flash does not accept video inputs for extension/consistency. */
+export function textConsistencyInstruction(
+  priorShot: Shot | null,
+  referencedShots: ResolvedShotRef[] = []
+): string | null {
+  const parts: string[] = [];
+
+  if (priorShot) {
+    parts.push(
+      `Continuity reference — prior Shot ${priorShot.turn_index + 1}: "${priorShot.prompt}". ` +
+        'Keep the same character identity, wardrobe, proportions, environment style, and lighting mood. ' +
+        'Only change what the new instruction explicitly requests.'
+    );
+  }
+
+  for (const ref of referencedShots) {
+    parts.push(
+      `Continuity reference — @${ref.label} (timeline slot ${ref.turnIndex + 1}): ` +
+        'match the visual style, characters, and lighting established in that shot.'
+    );
+  }
+
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+export function textEditReference(parentShot: Shot): string {
+  return (
+    `Non-destructive edit of Shot ${parentShot.turn_index + 1}. ` +
+    `Original scene description: "${parentShot.prompt}". ` +
+    'Change ONLY what the edit instruction requests. Preserve character identity, composition, motion, and all unrequested elements.'
+  );
 }
 
 export const EDIT_PRESERVE_INSTRUCTION =
-  'This is a non-destructive edit of the provided base video. Change ONLY the element or property described in the instruction. Preserve character identity, composition, motion, and all unrequested elements exactly.';
+  'This is a non-destructive edit. Change ONLY the element or property described in the instruction. Preserve character identity, composition, motion, and all unrequested elements exactly.';
 
 export const ELEMENT_SWAP_INSTRUCTION_TEMPLATE =
   'Replace the visual element associated with @{from} using the reference identity/appearance of @{to}. Preserve all other motion, lighting, camera, and scene composition.';
@@ -34,38 +62,59 @@ export interface VideoGenInput {
   baseVideoUrl: string | null;
   isEdit: boolean;
   previousInteractionId?: string | null;
-  extraReferenceVideos?: string[];
 }
 
-function mimeForAsset(type: Asset['type']): string {
-  if (type === 'video') return 'video/mp4';
-  if (type === 'audio') return 'audio/mpeg';
-  return 'image/png';
-}
+function buildTextReferences(
+  priorShot: Shot | null,
+  referencedShots: ResolvedShotRef[],
+  referencedAssets: Asset[]
+): TextReference[] {
+  const refs: TextReference[] = [];
 
-function buildMultimodalInputs(input: VideoGenInput): MultimodalInputRef[] {
-  const parts: MultimodalInputRef[] = [];
-
-  if (input.baseVideoUrl) {
-    parts.push({ type: 'base_video', url: input.baseVideoUrl, mimeType: 'video/mp4' });
-  }
-
-  for (const a of input.referencedAssets) {
-    parts.push({
-      type: a.type === 'audio' ? 'audio' : a.type === 'video' ? 'video' : 'image',
-      url: a.url,
-      mimeType: mimeForAsset(a.type),
+  if (priorShot) {
+    refs.push({
+      label: `Shot ${priorShot.turn_index + 1}`,
+      description: priorShot.prompt,
     });
   }
 
-  for (const ref of input.referencedShots || []) {
-    parts.push({ type: 'video', url: ref.videoUrl, mimeType: 'video/mp4' });
+  for (const ref of referencedShots) {
+    refs.push({
+      label: `@${ref.label}`,
+      description: `Timeline slot ${ref.turnIndex + 1} — style/motion continuity anchor`,
+    });
   }
 
-  for (const url of input.extraReferenceVideos || []) {
-    if (!parts.some(p => p.url === url)) {
-      parts.push({ type: 'video', url, mimeType: 'video/mp4' });
+  for (const asset of referencedAssets) {
+    if (asset.type === 'video' || asset.type === 'audio') {
+      refs.push({
+        label: `@${asset.tag}`,
+        description: asset.prompt || `${asset.type} asset reference (text-only — video/audio not sent to model)`,
+      });
     }
+  }
+
+  return refs;
+}
+
+function buildMultimodalInputs(
+  referencedAssets: Asset[],
+  textReferences: TextReference[]
+): MultimodalInputRef[] {
+  const parts: MultimodalInputRef[] = [];
+
+  for (const a of referencedAssets) {
+    if (a.type === 'image') {
+      parts.push({ type: 'image', url: a.url, mimeType: 'image/png' });
+    }
+  }
+
+  for (const ref of textReferences) {
+    parts.push({
+      type: 'text_reference',
+      label: ref.label,
+      description: ref.description,
+    });
   }
 
   return parts;
@@ -76,20 +125,32 @@ export function buildVideoContext(input: VideoGenInput): {
   contextSummary: ContextSummary;
 } {
   const instructions: string[] = [PHYSICS_INSTRUCTION];
-  const cons = consistencyInstruction(input.priorShot);
+  const referencedShots = input.referencedShots || [];
+  const textRefs = buildTextReferences(input.priorShot, referencedShots, input.referencedAssets);
+
+  const cons = input.isEdit
+    ? null
+    : textConsistencyInstruction(input.priorShot, referencedShots);
+
   const swapInstruction = buildSwapInstruction(input.prompt);
-  const previousInteractionId =
+  const chainInteractionId =
     input.previousInteractionId ??
     (input.isEdit && input.priorShot?.context_summary?.interactionId
       ? input.priorShot.context_summary.interactionId
-      : null);
+      : !input.isEdit && input.priorShot?.context_summary?.interactionId
+        ? input.priorShot.context_summary.interactionId
+        : null);
 
   if (cons) instructions.push(cons);
-  if (input.isEdit) instructions.push(EDIT_PRESERVE_INSTRUCTION);
+  if (input.isEdit && input.priorShot) {
+    instructions.push(textEditReference(input.priorShot));
+  } else if (input.isEdit) {
+    instructions.push(EDIT_PRESERVE_INSTRUCTION);
+  }
   if (swapInstruction) instructions.push(swapInstruction);
 
   const omniEndpoint: ContextSummary['omniEndpoint'] =
-    input.isEdit && previousInteractionId ? 'interactions.edit' : 'interactions.create';
+    input.isEdit && chainInteractionId ? 'interactions.edit' : 'interactions.create';
 
   const contextSummary: ContextSummary = {
     references: input.referencedAssets.map(a => ({
@@ -106,16 +167,18 @@ export function buildVideoContext(input: VideoGenInput): {
     editMode: input.isEdit,
     userPrompt: input.prompt,
     instructions: [...instructions],
-    referencedShots: input.referencedShots || [],
-    previousInteractionId,
+    referencedShots,
+    textReferences: textRefs,
+    previousInteractionId: chainInteractionId,
     omniEndpoint,
-    multimodalInputs: buildMultimodalInputs(input),
+    multimodalInputs: buildMultimodalInputs(input.referencedAssets, textRefs),
     swapInstruction,
   };
 
   return { instructions, contextSummary };
 }
 
+/** Only images are sent as multimodal media — video/audio use text references. */
 export function splitAssetMedia(assets: Asset[]) {
   return {
     images: assets.filter(a => a.type === 'image').map(a => a.url),

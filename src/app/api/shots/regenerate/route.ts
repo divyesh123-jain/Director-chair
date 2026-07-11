@@ -3,7 +3,6 @@ import { getServerSupabase } from '@/lib/supabase';
 import { getProvider } from '@/lib/ai/provider';
 import { buildVideoContext, splitAssetMedia } from '@/lib/prompt';
 import { uploadVideoToStorage } from '@/lib/storage-upload';
-import type { ResolvedShotRef } from '@/lib/types';
 import { z } from 'zod';
 
 const regenerateSchema = z.object({
@@ -91,7 +90,6 @@ export async function POST(request: Request) {
       baseVideoUrl: isEdit ? parentShot?.output_video_url || null : null,
       isEdit,
       previousInteractionId: ctx?.previousInteractionId || null,
-      extraReferenceVideos: ctx?.referencedShots?.map((s: ResolvedShotRef) => s.videoUrl) || [],
     });
 
     const { data: newShot, error: insertError } = await supabase
@@ -117,10 +115,11 @@ export async function POST(request: Request) {
       prompt: sourceShot.prompt,
       instructions,
       referenceImages: media.images,
-      referenceVideos: ctx?.referencedShots?.map((s: ResolvedShotRef) => s.videoUrl) || [],
-      referenceAudios: media.audios,
-      baseVideo: isEdit ? parentShot?.output_video_url || null : null,
-      previousInteractionId: ctx?.previousInteractionId || null,
+      referenceVideos: [],
+      referenceAudios: [],
+      baseVideo: null,
+      previousInteractionId: isEdit ? ctx?.previousInteractionId || null : null,
+      isEdit,
     });
 
     let finalUrl = '';

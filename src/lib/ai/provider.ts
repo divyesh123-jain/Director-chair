@@ -20,6 +20,8 @@ export interface GenerateVideoArgs {
   referenceAudios?: string[];
   baseVideo: string | null;
   previousInteractionId?: string | null;
+  /** When true, may use previous_interaction_id (edits only). New shots must be false. */
+  isEdit?: boolean;
 }
 
 export interface GenerateVideoResult {

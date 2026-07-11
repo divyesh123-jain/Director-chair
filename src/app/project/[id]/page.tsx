@@ -20,12 +20,16 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
   const [initError, setInitError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
 
-  const refreshProjectData = useCallback(async (projId: string) => {
+  const refreshProjectData = useCallback(async (projId: string, options?: { silent?: boolean }) => {
     try {
       const res = await fetch(`/api/projects/${projId}`);
       if (!res.ok) {
         if (res.status === 404 || res.status === 403) {
           window.location.href = '/';
+          return;
+        }
+        if (options?.silent) {
+          console.warn('Background refresh failed:', res.status);
           return;
         }
         throw new Error('Failed to load project details');
@@ -34,11 +38,16 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
       setProject(json.data.project);
       setAssets(json.data.assets || []);
       setShots(json.data.shots || []);
+      setInitError(null);
     } catch (err: any) {
       console.error(err);
-      setInitError(err.message || 'Failed to load project');
+      if (!options?.silent) {
+        setInitError(err.message || 'Failed to load project');
+      }
     } finally {
-      setInitializing(false);
+      if (!options?.silent) {
+        setInitializing(false);
+      }
     }
   }, []);
 
@@ -51,8 +60,8 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
     if (!hasGenerating || !project) return;
 
     const interval = setInterval(() => {
-      refreshProjectData(project.id);
-    }, 3000);
+      refreshProjectData(project.id, { silent: true });
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [shots, project, refreshProjectData]);

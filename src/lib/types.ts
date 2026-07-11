@@ -24,10 +24,17 @@ export interface ResolvedShotRef {
   videoUrl: string;
 }
 
+export interface TextReference {
+  label: string;
+  description: string;
+}
+
 export interface MultimodalInputRef {
-  type: 'image' | 'video' | 'audio' | 'base_video';
-  url: string;
-  mimeType: string;
+  type: 'image' | 'audio' | 'text_reference';
+  url?: string;
+  mimeType?: string;
+  label?: string;
+  description?: string;
 }
 
 export interface ContextSummary {
@@ -46,6 +53,7 @@ export interface ContextSummary {
   userPrompt?: string;
   instructions?: string[];
   referencedShots?: ResolvedShotRef[];
+  textReferences?: TextReference[];
   previousInteractionId?: string | null;
   omniEndpoint?: 'interactions.create' | 'interactions.edit';
   multimodalInputs?: MultimodalInputRef[];

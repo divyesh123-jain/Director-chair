@@ -68,11 +68,6 @@ export async function POST(request: Request) {
     const priorShot = topLevelShots.length > 0 ? topLevelShots[topLevelShots.length - 1] : null;
     const priorInteractionId = priorShot?.context_summary?.interactionId || null;
 
-    const extraReferenceVideos = [
-      ...(priorShot?.output_video_url ? [priorShot.output_video_url] : []),
-      ...referencedShots.map(s => s.videoUrl),
-    ];
-
     const { instructions, contextSummary } = buildVideoContext({
       prompt: message,
       referencedAssets,
@@ -81,7 +76,6 @@ export async function POST(request: Request) {
       baseVideoUrl: null,
       isEdit: false,
       previousInteractionId: priorInteractionId,
-      extraReferenceVideos,
     });
 
     const turnIndex = (shots || []).filter((s: any) => s.parent_shot_id === null).length;
@@ -104,23 +98,17 @@ export async function POST(request: Request) {
     createdShotId = shot.id;
 
     const media = splitAssetMedia(referencedAssets);
-    const referenceVideos = Array.from(
-      new Set([
-        ...media.videos,
-        ...referencedShots.map(s => s.videoUrl),
-        ...(priorShot?.output_video_url ? [priorShot.output_video_url] : []),
-      ])
-    );
 
     const provider = getProvider();
     const result = await provider.generateVideo({
       prompt: message,
       instructions,
       referenceImages: media.images,
-      referenceVideos,
-      referenceAudios: media.audios,
+      referenceVideos: [],
+      referenceAudios: [],
       baseVideo: null,
-      previousInteractionId: priorInteractionId,
+      previousInteractionId: null,
+      isEdit: false,
     });
 
     let finalUrl = '';
