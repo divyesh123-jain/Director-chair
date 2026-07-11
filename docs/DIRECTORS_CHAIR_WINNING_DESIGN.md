@@ -34,6 +34,26 @@ The demo should feel like walking onto a live film set, sitting in the director'
 
 ---
 
+## 2A. Official Hackathon Rubric Strategy
+
+The live judging criteria are different from the Gemini problem-statement rubric. Optimize the demo for these weights:
+
+| Criterion | Weight | Our angle | Evidence in UI |
+|---|---|---|---|
+| **Creativity & Originality** | **35%** | "Film-set as software" metaphor + AI Animatic Storyboard + "UI is the demo" | Animatic cards, clapperboard transitions, Director's Viewfinder |
+| **Live Demo** | 25% | Cinematic motion, live previews, voice waveform, Play Timeline | Storyboard hover loops, laser rendering state, premiere modal |
+| **Impact in India** | 25% | Offline Local Agent, vernacular voice direction, affordable indie production | Local Agent toggle, language indicator, India demo scenarios |
+| **Technical Depth** | 15% | Context lineage graph, provider abstraction, multi-modal orchestration | Context Inspector JSON, continuity graph, version tree |
+
+### Why this mapping wins
+
+- **Creativity is 35%** — the biggest weight. Our film-set metaphor is inherently creative and instantly differentiated from every ChatGPT-clone project.
+- **Live Demo is 25%** — a wall of breathing animatic cards is more impressive than any verbal explanation.
+- **India Impact is 25%** — most teams will ignore this or tack it on. We bake it into the product through Local Agent (connectivity), voice direction (language barrier), and Indian demo content (cultural relevance).
+- **Technical Depth is 15%** — the Context Inspector and continuity engine prove engineering sophistication without requiring a deep architecture lecture.
+
+---
+
 ## 3. The Product: A Film Set in Software
 
 Don't say "AI video app." Say:
@@ -656,6 +676,100 @@ Local Agent: Note stored. Will apply to Shot 2.
 
 ---
 
+### Scenario G: The Rural Educator (India Impact)
+
+**What it proves:** Vernacular voice direction, low-cost content creation, and offline-first planning for Indian education.
+
+**Use case:** A teacher in a rural school creates visual explainers for students without English fluency or studio equipment.
+
+**Assets:**
+- `@teacher` — animated educator character (NB2)
+- `@solar_system` — diagram asset (NB2)
+- `@classroom` — village classroom background (NB2 / upload)
+
+**Conversation flow:**
+
+```
+User: [voice in Hindi] "@teacher stands in @classroom and points to @solar_system."
+Crew: Shot 1 generated. Multi-modal voice input badge.
+
+User: Make it simpler for younger students.
+Crew: Shot 1 v2. Style badge: simplified visual style.
+
+User: Create shot 2: close-up of @solar_system rotating slowly.
+Crew: Shot 2 generated. Continuity: Shot 1.
+
+User: [toggles Local Agent] Plan this lesson for 5 topics offline.
+Local Agent: Plan stored. 5 lessons. Offline ready.
+```
+
+**Judge quote:**
+> "A teacher in any village can now create a visual lesson by simply talking. No studio, no English keyboard, no constant internet."
+
+---
+
+### Scenario H: The Indie Filmmaker (India Impact)
+
+**What it proves:** Affordable pre-visualization, style transfer, and continuity for Indian independent cinema.
+
+**Use case:** A low-budget filmmaker storyboards a dance sequence before the actual shoot.
+
+**Assets:**
+- `@dancer` — lead dancer (NB2)
+- `@temple_bg` — heritage temple location (NB2)
+- `@rain_fx` — rain overlay asset (NB2)
+
+**Conversation flow:**
+
+```
+User: @dancer performs under @rain_fx in front of @temple_bg, wide shot.
+Crew: Shot 1 generated. Physics ON.
+
+User: Shot 2: close-up of @dancer's face, same rain.
+Crew: Shot 2 generated. Continuity: Shot 1.
+
+User: Make it look like a classic Bollywood rain sequence.
+Crew: Shot 1 v2. Style badge: Bollywood cinematic.
+
+User: Play timeline.
+Crew: Plays sequence with clapperboard transitions.
+```
+
+**Judge quote:**
+> "We just pre-visualized a Bollywood-style sequence in minutes. For indie filmmakers in India, that's months of planning compressed into a conversation."
+
+---
+
+### Scenario I: The Field Reporter (India Impact)
+
+**What it proves:** Offline planning, vernacular input, and local error recovery for journalism in low-connectivity regions.
+
+**Use case:** A journalist reporting from a remote district with intermittent internet.
+
+**Assets:**
+- `@market_photo` — reference still from phone (upload)
+- `@anchor` — animated anchor character (NB2)
+- `@voice_note` — voice narration in regional language (upload)
+
+**Conversation flow:**
+
+```
+User: [uploads @market_photo + @voice_note]
+       "@anchor reports from this market."
+Crew: Shot 1 generated. Multi-modal input.
+
+User: [voice] Add more crowd in the background.
+Crew: Shot 1 v2. Environment badge.
+
+User: [toggles Local Agent] I'm on a train with no signal. Save this plan.
+Local Agent: Plan saved. Will sync when connection returns.
+```
+
+**Judge quote:**
+> "India has 700 million internet users, but connectivity is fragile. This works even when the network doesn't."
+
+---
+
 ## 11B. Scenario Selection Guide for the Team
 
 | Judge seems interested in... | Lead with scenario... | Key UI to hit |
@@ -666,6 +780,9 @@ Local Agent: Note stored. Will apply to Shot 2.
 | Storyboarding / animation | D: Animated Pitch | Storyboard view, Propagated edit |
 | Versioning / workflow | E: Director's Cut | Version tree, Branch command, Diff Viewer |
 | On-device / edge AI | F: Local-First Field Report | Local Agent toggle, Agent Status Card |
+| Education / rural India | G: The Rural Educator | Voice input, Local Agent, simple style badge |
+| Indian cinema / creators | H: The Indie Filmmaker | Style transfer, Play Timeline, continuity |
+| Indian journalism / connectivity | I: The Field Reporter | Multi-modal input, offline state, voice note |
 
 ---
 
@@ -795,7 +912,127 @@ This is a **wow feature** — it shows pre-visualization at hackathon speed.
 
 ---
 
-## 15. Award-Winning Demo Script (5 Minutes)
+## 15. AI Animatic Storyboard: Live Motion Cards
+
+> **The killer feature:** A full-bleed, live-streaming storyboard where every card is a **motion animatic** — not a static thumbnail. Judges see the film breathing before they ask for it.
+
+### 15.1 What it is
+
+Traditional timelines show static thumbnails. Director's Chair shows **AI animatic cards** — auto-generated, low-latency motion previews that loop silently, giving the director an immediate sense of pacing, camera, and continuity.
+
+These cards are:
+- **Live-streaming:** Each card plays a short looping preview (2–4 seconds) of the generated shot.
+- **Motion-aware:** Hover scrubs through the clip; click expands to full player.
+- **Full-bleed:** Cards fill their frame edge-to-edge — no wasted space, no generic UI chrome.
+- **Context-responsive:** Cards dim, glow, or animate based on state (generating, edited, selected, continuity-linked).
+
+### 15.2 Visual design
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  🎬 DAILIES — AI ANIMATIC STORYBOARD                         │
+├────────────────────────────────────────────────────────────┤
+│  [▶ PLAY SEQUENCE]  [🎞 Storyboard]  [🎬 Timeline]           │
+├────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────┐  ┌─────────────────────┐          │
+│  │                     │  │                     │          │
+│  │  [LIVE LOOP VIDEO]  │  │  [LIVE LOOP VIDEO]  │          │
+│  │  ▶ auto-playing     │→ │  ▶ auto-playing     │→         │
+│  │  SHOT 01            │  │  SHOT 02            │          │
+│  │  ⚛ Physics ON       │  │  ⚛ Physics ON       │          │
+│  │  🔗 v1 • v2 • v3    │  │  🔗 Continuity: 01  │          │
+│  └─────────────────────┘  └─────────────────────┘          │
+│                                                            │
+│  ┌─────────────────────┐  ┌─────────────────────┐          │
+│  │   GENERATING...     │  │   EDITING v2...     │          │
+│  │  [scanning laser]   │  │  [gold pulse bar]   │          │
+│  │  SHOT 03            │  │  SHOT 01 v4         │          │
+│  └─────────────────────┘  └─────────────────────┘          │
+└────────────────────────────────────────────────────────────┘
+```
+
+### 15.3 Card states
+
+| State | Visual treatment | Motion |
+|---|---|---|
+| **Idle / live** | Card plays muted loop, subtle cyan border | Smooth 2s loop, slight float on hover |
+| **Selected** | Gold left border, elevated shadow, scale 1.01 | Border pulses softly |
+| **Generating** | Darkened card, scanning laser line, blurred "RENDERING" text | Laser scans top-to-bottom infinitely |
+| **Edited** | Version tabs appear below thumbnail; active tab has gold underline | New version tab slides in |
+| **Continuity-linked** | Cyan line connects to next card; both glow on hover | Line draws on scroll into view |
+| **Error** | Rose border, error icon, retry button | Subtle shake |
+
+### 15.4 Live streaming behavior
+
+- **Auto-play on hover:** Cards are paused by default to save bandwidth. Hover starts the loop.
+- **Ambient play:** Optionally, the currently selected shot and its neighbors play muted loops automatically.
+- **Scrub preview:** Drag horizontally across a card to scrub through its timeline.
+- **Expand on click:** Click opens an immersive modal player with full controls.
+
+### 15.5 Full-bleed card anatomy
+
+```
+┌──────────────────────────────────┐  ← edge-to-edge video
+│                                  │
+│   [muted loop / scrub overlay]   │
+│                                  │
+│   ┌────────────────────────┐     │
+│   │ SHOT 01    [Edit]      │     │  ← bottom overlay gradient
+│   │ v1  v2  v3             │     │
+│   │ ⚛ Physics ON  [STYLE]  │     │
+│   └────────────────────────┘     │
+└──────────────────────────────────┘
+```
+
+- **No inner padding** on the video frame — it fills the card completely.
+- **Bottom gradient overlay** (`bg-gradient-to-t from-black/80 to-transparent`) holds metadata.
+- **Metadata is overlaid**, not placed below — maximizing video real estate.
+
+### 15.6 Storyboard view vs timeline view
+
+Toggle between two modes:
+- **Storyboard (grid):** Full-bleed animatic cards in a responsive grid. Best for seeing the whole scene at once.
+- **Timeline (list):** Detailed ShotCards with Context Inspector. Best for editing and inspection.
+
+Transition between views uses Framer Motion `layoutId` so cards animate into their new positions.
+
+### 15.7 Continuity heatmap overlay
+
+Add a subtle **continuity heatmap** to each card:
+- Green edge glow = fully consistent with prior shot.
+- Amber edge glow = minor context change (e.g., new lighting).
+- No glow = first shot or isolated take.
+
+This makes continuity instantly scannable across the storyboard.
+
+### 15.8 Live camera / stage view (bonus)
+
+For multi-modal demos, add a **"Live Stage"** card at the top:
+- Shows a live camera feed or uploaded reference media.
+- Acts as the "set" the director is currently directing.
+- Useful for voice-over direction with visual reference.
+
+### 15.9 Why this wins without a demo
+
+A judge scrolling this storyboard sees:
+1. **Motion** — the product isn't static, it's alive.
+2. **Continuity** — connected shots tell a story visually.
+3. **Craft** — every card is a finished piece of UI, not a placeholder.
+4. **Scale** — a grid of animatics looks like a real film dailies wall.
+
+> *"The UI doesn't need a demo. It IS the demo."*
+
+### 15.10 Implementation notes
+
+- Use HTML5 `<video>` with `muted`, `loop`, `playsInline`.
+- Lazy-load off-screen videos; pause when out of viewport.
+- For mock/demo mode, use `/public/demo/*.mp4` loops.
+- In real mode, stream low-res proxy previews from Omni Flash while full shot generates.
+- Add `IntersectionObserver` to toggle play/pause based on visibility.
+
+---
+
+## 16. Award-Winning Demo Script (5 Minutes)
 
 ### Hook (15 sec)
 
@@ -852,7 +1089,7 @@ This is a **wow feature** — it shows pre-visualization at hackathon speed.
 
 ---
 
-## 16. Technical Moats to Mention in the Pitch
+## 17. Technical Moats to Mention in the Pitch
 
 When judges ask "what's hard about this?" say:
 
@@ -864,7 +1101,7 @@ When judges ask "what's hard about this?" say:
 
 ---
 
-## 17. Required New Components
+## 18. Required New Components
 
 Add these to the build spec:
 
@@ -879,10 +1116,15 @@ Add these to the build spec:
 - `ShotVersionTree.tsx` — branching version visualization.
 - `EditTypeBadge.tsx` — swap/style/motion/environment/temporal.
 - `StatusBar.tsx` — bottom project + mode bar.
+- `AnimaticCard.tsx` — full-bleed live-looping shot preview.
+- `AnimaticGrid.tsx` — responsive storyboard grid with layout transitions.
+- `AnimaticScrubber.tsx` — hover/touch scrub preview for each card.
+- `ContinuityHeatmap.tsx` — edge glow overlay for consistency status.
+- `LiveStageCard.tsx` — live camera/reference feed card.
 
 ---
 
-## 18. Data Model Additions
+## 19. Data Model Additions
 
 Extend `ContextSummary`:
 
@@ -903,7 +1145,7 @@ Add `POST /api/intent` route for edit classification.
 
 ---
 
-## 19. Tailwind Config Additions
+## 20. Tailwind Config Additions
 
 ```ts
 colors: {
@@ -925,7 +1167,7 @@ colors: {
 
 ---
 
-## 20. Anti-Patterns That Kill Awards
+## 21. Anti-Patterns That Kill Awards
 
 - ❌ Generic chat UI (looks like ChatGPT clone).
 - ❌ Timeline as a spreadsheet or list.
@@ -938,7 +1180,7 @@ colors: {
 
 ---
 
-## 21. Final Judging Narrative
+## 22. Final Judging Narrative
 
 End every demo with this line:
 
@@ -948,13 +1190,14 @@ This reframes the entire competition. You aren't a video generator. You are **th
 
 ---
 
-## Bottom Line
+## 23. Bottom Line
 
-Award-winning hackathon demos win on **clarity, novelty, and proof**. Director's Chair delivers all three:
+Award-winning hackathon demos win on **clarity, novelty, proof, and local relevance**. Director's Chair delivers all four:
 
 1. **Clarity** — the film-set metaphor makes every feature instantly understandable.
-2. **Novelty** — continuity engine, physics badge, diff viewer, local agent are not commodity UI.
-3. **Proof** — the Context Inspector and continuity graph make hidden orchestration visible.
+2. **Novelty** — continuity engine, physics badge, diff viewer, live animatic storyboard, local agent are not commodity UI.
+3. **Proof** — the Context Inspector, continuity graph, and live motion cards make hidden orchestration visible.
+4. **India Impact** — Local Agent for flaky connectivity, vernacular voice direction, and India-specific demo scenarios make the product relevant to 1.4 billion people.
 
 Build this, practice the 5-minute script, and you won't just score well. You'll be the demo judges remember.
 
