@@ -28,7 +28,7 @@ export default async function proxy(request: NextRequest) {
   );
 
   const allCookies = request.cookies.getAll();
-  const hasSupabaseCookie = allCookies.some(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'));
+  const hasSupabaseCookie = allCookies.some(c => c.name.startsWith('sb-') && c.name.includes('-auth-token'));
 
   let user = null;
   if (hasSupabaseCookie) {
