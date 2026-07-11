@@ -31,7 +31,7 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
         throw new Error('Failed to load project details');
       }
       const json = await res.json();
-      setProject(json.data);
+      setProject(json.data.project);
       setAssets(json.data.assets || []);
       setShots(json.data.shots || []);
     } catch (err: any) {

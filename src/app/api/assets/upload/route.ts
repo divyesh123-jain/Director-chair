@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     // Verify project ownership
-    const { data: projectCheck } = await supabase
+    const { data: projectCheck, error: projectError } = await supabase
       .from('projects')
       .select('id')
       .eq('id', projectId)
