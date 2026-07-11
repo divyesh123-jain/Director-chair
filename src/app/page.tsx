@@ -16,6 +16,30 @@ export default function Page() {
   const [initializing, setInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [createProjectName, setCreateProjectName] = useState('');
+  const [createProjectLoading, setCreateProjectLoading] = useState(false);
+
+  const handleCreateFirstProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createProjectName.trim()) return;
+    setCreateProjectLoading(true);
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: createProjectName }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to create project');
+      
+      setProject(json.data);
+      await refreshProjectData(json.data.id);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setCreateProjectLoading(false);
+    }
+  };
 
   // 1. Fetch project bundle
   const refreshProjectData = useCallback(async (projId: string) => {
@@ -41,21 +65,10 @@ export default function Page() {
         const existing = json.data || [];
 
         let activeProject = existing[0];
-
-        // If no project exists, auto-create a demo project
-        if (!activeProject) {
-          const createRes = await fetch('/api/projects', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: "Director's Chair Demo" }),
-          });
-          const createJson = await createRes.json();
-          if (!createRes.ok) throw new Error(createJson.error || 'Failed to auto-create project');
-          activeProject = createJson.data;
+        if (activeProject) {
+          setProject(activeProject);
+          await refreshProjectData(activeProject.id);
         }
-
-        setProject(activeProject);
-        await refreshProjectData(activeProject.id);
       } catch (err: any) {
         console.error('Initialization error:', err);
         setInitError(err.message || 'Failed to initialize workspace');
@@ -193,6 +206,63 @@ references auth.users(id) on delete cascade;`}
       <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-400 gap-4">
         <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
         <p className="text-sm font-medium tracking-wide uppercase font-mono animate-pulse">Initializing Studio Workspace...</p>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-400 p-6">
+        {/* Dynamic Background Gradients */}
+        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] bg-indigo-500/10 rounded-full blur-[140px] pointer-events-none" />
+        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] bg-purple-600/10 rounded-full blur-[140px] pointer-events-none" />
+
+        <div className="relative z-10 max-w-md w-full bg-zinc-900/40 border border-zinc-800 p-8 rounded-3xl text-center space-y-6 backdrop-blur-md shadow-2xl">
+          <div className="w-16 h-16 bg-indigo-950/40 border border-indigo-900/40 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-lg shadow-indigo-650/20">
+            🎬
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-white">Create Your First Project</h2>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Name your project workspace to get started. You'll be able to upload assets, generate images, and compose multi-shot stories.
+            </p>
+          </div>
+
+          <form onSubmit={handleCreateFirstProject} className="space-y-4">
+            <div className="text-left">
+              <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Project Name</label>
+              <input
+                type="text"
+                value={createProjectName}
+                onChange={e => setCreateProjectName(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-zinc-950/80 border border-zinc-800/80 hover:border-zinc-700/60 focus:border-indigo-500/80 focus:outline-none rounded-xl text-sm transition-colors text-white"
+                placeholder="e.g. Space Odyssey, Sci-Fi Film"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={createProjectLoading}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-2xl transition-all duration-200 mt-2 shadow-lg shadow-indigo-600/20"
+            >
+              {createProjectLoading ? 'Creating Workspace...' : 'Create Project 🚀'}
+            </button>
+          </form>
+
+          <div className="flex justify-center pt-2">
+            <button
+              onClick={async () => {
+                const supabase = getBrowserSupabase();
+                await supabase.auth.signOut();
+                window.location.href = '/landing';
+              }}
+              className="text-[11px] text-zinc-500 hover:text-rose-400 transition-colors font-semibold"
+            >
+              Sign Out / Cancel
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
