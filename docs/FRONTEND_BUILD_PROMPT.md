@@ -373,6 +373,83 @@ Use TypeScript everywhere. Use Framer Motion for all motion. Use Lucide React fo
 
 ---
 
+## 12. Engineering Notes
+
+### State Management
+
+Use **Zustand** for global state. Keep it simple — one store for the demo:
+
+```ts
+interface DirectorStore {
+  assets: Asset[];
+  shots: Shot[];
+  messages: Message[];
+  activeShotId: string | null;
+  isLocalAgent: boolean;
+  demoScenario: 'neon-runner' | 'rural-reporter' | 'indie-filmmaker' | 'teachers-lesson';
+  voiceLanguage: string;
+  setActiveShot: (id: string | null) => void;
+  toggleLocalAgent: () => void;
+  sendMessage: (text: string) => void;
+  loadScenario: (key: DemoScenario) => void;
+}
+```
+
+- Keep UI-local state (modals, hover, scrub position) inside components.
+- Avoid prop drilling across the three panels.
+
+### Asset Stubs
+
+The first run must look complete. Provide a script or seed generator that writes placeholder assets into `/public/demo/`:
+
+- `hero.png`, `spaceship.png`, `night_bg.png`
+- `shot1.mp4`, `shot1_edit.mp4`, `shot2.mp4`, `shot3.mp4`
+
+If no real videos exist, generate 3-second colored-noise or gradient-loop MP4/WebM files and label them clearly as placeholders in the UI (`Proxy Preview` badge).
+
+### Video Performance
+
+The Animatic Grid can render many `<video>` elements at once. Prevent GPU meltdown:
+
+- Pause off-screen videos with an Intersection Observer.
+- Use `preload="metadata"` by default; switch to `auto` on hover/select.
+- Always provide `poster` frames (first frame image or generated thumbnail).
+- Limit concurrent ambient playback to the selected card + immediate neighbors (max 3).
+- Use `playsInline muted loop` on every video.
+
+### Camera / Live Stage
+
+For the `LiveStageCard` camera preview:
+
+- Use `navigator.mediaDevices.getUserMedia({ video: true })`.
+- Show a permission-prompt state and a manual "Enable Camera" button — do not auto-request on mount.
+- Provide a fallback upload button if permission is denied.
+- Stop the stream when the card unmounts or the modal closes to release the camera.
+
+### Keyboard Shortcuts
+
+Add cinematic keyboard shortcuts to impress judges during the live demo:
+
+| Key | Action |
+|---|---|
+| `Space` | Play / pause the active timeline |
+| `E` | Toggle edit mode on selected shot |
+| `V` | Toggle voice input |
+| `Cmd/Ctrl + K` | Open scenario switcher / command palette |
+| `Esc` | Close modals |
+| `← / →` | Navigate shots in storyboard |
+
+Implement via a single `useKeyboardShortcuts` hook attached to `AppShell`.
+
+### Accessibility & Motion
+
+- Respect `prefers-reduced-motion`: disable spring transitions, hover scale, and auto-playing ambient loops.
+- Add `aria-label` to icon-only buttons and shot cards.
+- Ensure focus rings use the cyan accent, never browser default blue.
+- Trap focus inside modals while open.
+
+---
+
 ## 11. Final Directive
 
 > The UI itself should win the hackathon. A judge looking at a screenshot should believe this product is real, polished, and award-worthy before hearing a single word of pitch.
